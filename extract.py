@@ -1,7 +1,12 @@
 #!/home/maxhutch/anaconda3/bin/python3
 
+from chest import Chest
+from slict import CachedSlict
+import numpy as np
+
 import json
 from os import getcwd
+from os.path import exists
 
 from nekpy.dask.subgraph import series
 from nekpy.dask.tasks import configure
@@ -14,9 +19,6 @@ with open(argv[1], "r") as f:
 
 with open(argv[2], "r") as f:
     sweeps = json.load(f)
-
-with open(argv[3], "r") as f:
-    tusr = f.read()
 
 base["prefix"] = sweeps["prefix"]
 del sweeps["prefix"]
@@ -42,5 +44,28 @@ for ov in overrides:
 from os.path import join
 workdirs = [join(getcwd(), x["name"]) for x in overrides]
 configs = [configure(base, override, workdir) for override, workdir in zip(overrides, workdirs)]
-res = [series(config, tusr, job_time = 4.0) for config in configs]
-final = run_all(res, base)
+
+data_table = {}
+
+max_index = -1
+height = 'H_exp'
+for p, wd in zip(configs, workdirs):
+    path = join(wd, "{}-results".format(p['name']))
+    print(path)
+    if exists(path):
+        c = Chest(path=path)
+        sc = CachedSlict(c)
+        times = sc[:,height].keys()[:max_index]
+        data_table[p['viscosity'], p['conductivity'], 'time'] = np.array(times) 
+        data_table[p['viscosity'], p['conductivity'], 'height'] = np.array(
+            [sc[t, height] for t in times]) 
+        data_table[p['viscosity'], p['conductivity'], 'atwood'] = np.array(
+            [4 * np.mean(sc[t, 't_abs_proj_z']) for t in times]) 
+        for k, v in p.items():
+            data_table[p['viscosity'], p['conductivity'], k] = v
+
+import pickle
+with open("data_table.p", "wb") as f:
+    pickle.dump(data_table, f)
+print(data_table)
+
