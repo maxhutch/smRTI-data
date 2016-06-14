@@ -5,7 +5,7 @@
   "root_mesh": [
     0.0,
     0.0,
-    -4.0
+    -32.0
   ],
   "atwood": 0.001,
   "no_check": 1,
@@ -37,7 +37,7 @@
   "shape_mesh": [
     2,
     2,
-    64
+    256
   ],
   "kscal": 1,
   "order": 32,
@@ -45,7 +45,7 @@
   "nvel": 4,
   "uservp": 0,
   "dt_initial": 1e-04,
-  "end_time": 32.0,
+  "end_time": 256.0,
   "restart": 0.0,
   "top_bound": "W",
   "rho_cp": 1.0,
@@ -56,14 +56,14 @@
   "extent_mesh": [
     0.5,
     0.5,
-    4.0
+    32.0
   ],
   "toldiv": 0.0,
   "dim": 3,
   "procs": 4,
   "back_bound": "SYM",
   "io_step": 0.0,
-  "viscosity": 0.0001,
+  "viscosity": 0.0002,
   "delta" : 0.0078125,
   "num_fields": 2
 }

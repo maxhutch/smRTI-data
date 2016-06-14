@@ -35,11 +35,8 @@ for c in candidates:
 aspect = 4
 for ov in overrides:
     ov["name"] = work_name(base["prefix"], ov)
-    ov["shape_mesh"] = [ov["elms"], ov["elms"], aspect*ov["elms"]]
-    nodes = 1 #max(1, int(4 * (ov["order"]*ov["elms"])**3 / 8388608))
-    ov["procs"] = 4*nodes
-    ov["io_files"] = -nodes
-    ov["dt"] = (2/(ov["elms"]*(ov["order"]-1)**2))/0.0558519
+    ov['viscosity'] = ov['nu'] * 1.0e-4
+    ov['conductivity'] = ov['viscosity'] / ov['Sc']
 
 from os.path import join
 workdirs = [join(getcwd(), x["name"]) for x in overrides]
