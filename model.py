@@ -1,5 +1,13 @@
 import numpy as np
 
+def filter_trajectory(times, heights, L):
+    stop = -1
+    for i in range(len(heights)):
+        if heights[i] > 24.0:
+            stop = i
+            break
+    return times[:stop], heights[:stop]
+
 def f(t, y, C, Atwood, visc, L, diff):
     M = (C[4]*L + C[3] * abs(y[0])) * L * L
     SA = (C[6]*L*L + C[5] * L*abs(y[0]))
