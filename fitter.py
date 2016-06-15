@@ -38,13 +38,11 @@ def accept_test(f_new, x_new, f_old, x_old):
 results = {}
 
 for v, c in data_table[:,:,'time'].keys():
-    fig, axs = plt.subplots(1, 2, figsize=(8,8))
 
     this = data_table[v, c, :]
 
     times, heights = filter_trajectory(this['time'], this['height'], this['extent_mesh'][2])
 
-    axs[0].plot(times, heights)
 
     L = np.sqrt(2) / this["kmin"]
     Atwood = this['atwood'] * this['g']
@@ -53,7 +51,6 @@ for v, c in data_table[:,:,'time'].keys():
 
     T, H, V, At = model(guess, Atwood, v, L, c, y0, times)
     rmse_i = error(guess, Atwood, v, L, c, y0, times, heights)
-    axs[0].plot(times, H)
   
     def func(x):
         if len(x) == 4:
@@ -86,7 +83,22 @@ for v, c in data_table[:,:,'time'].keys():
     print(res_n.x)
     results[v, c] = (res_n.x, res_n.fun)
 
-    T, H, V, At = model(merge_coef(res_n.x, fix_thin), Atwood, v, L, c, y0, times)
+for v, c in data_table[:,:,'time'].keys():
+    this = data_table[v, c, :]
+
+    times, heights = filter_trajectory(this['time'], this['height'], this['extent_mesh'][2])
+
+    L = np.sqrt(2) / this["kmin"]
+    Atwood = this['atwood'] * this['g']
+    y0 = [this["amp0"]/this["kmin"], 0., 2*this['delta']*L*L/np.sqrt(np.pi)]
+    
+    fig, axs = plt.subplots(1, 2, figsize=(8,8))
+    axs[0].plot(times, heights)
+
+    T, H, V, At = model(guess, Atwood, v, L, c, y0, times)
+    axs[0].plot(times, H)
+
+    T, H, V, At = model(merge_coef(results[v,c][0], fix_thin), Atwood, v, L, c, y0, times)
     spl = UnivariateSpline(times, heights, k=3, s = 0.00000001).derivative()
 
     axs[0].plot(times, H)
@@ -95,8 +107,6 @@ for v, c in data_table[:,:,'time'].keys():
     axs[1].axhline(1./np.sqrt(np.pi))
     plt.savefig('H-{}-{}.png'.format(v,c))
 
-
-for v, c in list(results.keys()):
     res = results[v,c]
     print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res[1]) + str(res[0]))
 
