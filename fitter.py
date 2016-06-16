@@ -10,8 +10,6 @@ import numpy as np
 from scipy.optimize import minimize, basinhopping, differential_evolution
 from scipy.interpolate import UnivariateSpline
 
-
-
 with open("data_table.p", 'rb') as f:
     data_table_d = pickle.load(f)
 
@@ -23,7 +21,7 @@ guess = [1.0, 1.0, 113.0, 1.0, 1./(2*np.pi), 4.0, 1.0]
 bounds = ((1, 1), (0, 10), (0,400), (0.01, 100), (1./(2*np.pi), 1./(2*np.pi)), (0.01, 100), (1,1))
 
 guess_thin = [1.0, 113.0, 1.0, 4.0]
-bounds_thin = ((0, 10), (0,400), (0.01, 100), (0.01, 100))
+bounds_thin = ((0.01, 10), (0.01,400), (0.01, 100), (0.01, 100))
 fix_thin = [1.0, 1./(2.*np.pi), 1.0]
 
 def merge_coef(var, fix):
@@ -41,7 +39,7 @@ for v, c in data_table[:,:,'time'].keys():
 
     this = data_table[v, c, :]
 
-    times, heights = filter_trajectory(this['time'], this['height'], this['extent_mesh'][2])
+    times, heights = filter_trajectory(this['time'], this['height2'], this['extent_mesh'][2])
 
 
     L = np.sqrt(2) / this["kmin"]
@@ -74,39 +72,39 @@ for v, c in data_table[:,:,'time'].keys():
                 niter_success=50, 
                 niter=1000)
     """
-    res_n = differential_evolution(func, bounds_thin, disp=True, polish=True, tol=0.0001)
+    res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
     rmse_n = error(merge_coef(res_n.x, fix_thin), Atwood, v, L, c, y0, times, heights)
 
-    print(v, c, rmse_i, rmse_l, rmse_n)
-    print(guess_thin)
-    print(res_l.x)
-    print(res_n.x)
     results[v, c] = (res_n.x, res_n.fun)
 
+def func(x):
+    if len(x) == 4:
+        x_full = merge_coef(x, fix_thin)
+    else:
+        x_full = x
+
+    err = 0.
+    count = 0
+    for v, c in data_table[:,:,'time'].keys():
+        this = data_table[v, c, :]
+        times, heights = filter_trajectory(this['time'], this['height2'], this['extent_mesh'][2])
+
+        L = np.sqrt(2) / this["kmin"]
+        Atwood = this['atwood'] * this['g']
+        y0 = [this["amp0"]/this["kmin"], 0., 2*this['delta']*L*L/np.sqrt(np.pi)]
+
+        err += error(x_full, Atwood, v, L, c, y0, times, heights)
+        count += 1
+    return err / count  
+
+res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
+print("Overall error is {}".format(res_n.fun))
+print(res_n.x)
+
+with open("fit_results.p", "wb") as f:
+    pickle.dump(results, f)
+
 for v, c in data_table[:,:,'time'].keys():
-    this = data_table[v, c, :]
-
-    times, heights = filter_trajectory(this['time'], this['height'], this['extent_mesh'][2])
-
-    L = np.sqrt(2) / this["kmin"]
-    Atwood = this['atwood'] * this['g']
-    y0 = [this["amp0"]/this["kmin"], 0., 2*this['delta']*L*L/np.sqrt(np.pi)]
-    
-    fig, axs = plt.subplots(1, 2, figsize=(8,8))
-    axs[0].plot(times, heights)
-
-    T, H, V, At = model(guess, Atwood, v, L, c, y0, times)
-    axs[0].plot(times, H)
-
-    T, H, V, At = model(merge_coef(results[v,c][0], fix_thin), Atwood, v, L, c, y0, times)
-    spl = UnivariateSpline(times, heights, k=3, s = 0.00000001).derivative()
-
-    axs[0].plot(times, H)
-    axs[1].plot(times, V / np.sqrt(Atwood * L))
-    axs[1].plot(times, spl(times)/ np.sqrt(Atwood * L))
-    axs[1].axhline(1./np.sqrt(np.pi))
-    plt.savefig('H-{}-{}.png'.format(v,c))
-
     res = results[v,c]
     print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res[1]) + str(res[0]))
 
