@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import minimize, basinhopping, differential_evolution
 from scipy.interpolate import UnivariateSpline
+import cma
 
 with open("data_table.p", 'rb') as f:
     data_table_d = pickle.load(f)
@@ -21,7 +22,10 @@ guess = [1.0, 1.0, 113.0, 1.0, 1./(2*np.pi), 4.0, 1.0]
 bounds = ((1, 1), (0, 10), (0,400), (0.01, 100), (1./(2*np.pi), 1./(2*np.pi)), (0.01, 100), (1,1))
 
 guess_thin = [1.0, 113.0, 1.0, 4.0]
-bounds_thin = ((0.01, 10), (0.01,400), (0.01, 100), (0.01, 100))
+bounds_thin     = ((0.01, 10), (0.01,400), (0.01, 100), (0.01, 100))
+bounds_thin_cma = [(0.01, 0.01, 0.01, 0.01),
+                   (10, 400, 100, 100) ]
+
 fix_thin = [1.0, 1./(2.*np.pi), 1.0]
 
 def merge_coef(var, fix):
@@ -72,10 +76,16 @@ for v, c in data_table[:,:,'time'].keys():
                 niter_success=50, 
                 niter=1000)
     """
-    res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
-    rmse_n = error(merge_coef(res_n.x, fix_thin), Atwood, v, L, c, y0, times, heights)
+    cma_opts = {
+        'bounds' : bounds_thin_cma
+    }
+    res_cma = cma.fmin(func, guess_thin, 5, cma_opts)
 
-    results[v, c] = (res_n.x, res_n.fun)
+    #res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
+    #rmse_n = error(merge_coef(res_n.x, fix_thin), Atwood, v, L, c, y0, times, heights)
+
+    #results[v, c] = (res_n.x, res_n.fun)
+    results[v, c] = (res_cma[0], res_cma[1])
 
 def func(x):
     if len(x) == 4:
@@ -97,9 +107,10 @@ def func(x):
         count += 1
     return err / count  
 
-res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
-print("Overall error is {}".format(res_n.fun))
-print(res_n.x)
+res_cma = cma.fmin(func, guess_thin, 5, cma_opts)
+#res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
+print("Overall error is {}".format(res_cma[1]))
+print(res_cma[0])
 
 with open("fit_results.p", "wb") as f:
     pickle.dump(results, f)
