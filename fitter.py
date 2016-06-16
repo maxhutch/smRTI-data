@@ -3,12 +3,8 @@
 import pickle
 from slict import CachedSlict
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize, basinhopping, differential_evolution
-from scipy.interpolate import UnivariateSpline
+from scipy.optimize import minimize
 import cma
 
 with open("data_table.p", 'rb') as f:
@@ -30,12 +26,6 @@ fix_thin = [1.0, 1./(2.*np.pi), 1.0]
 
 def merge_coef(var, fix):
   return [fix[0], var[0], var[1], var[2], fix[1], var[3], fix[2]]
-
-def accept_test(f_new, x_new, f_old, x_old):
-    for i in range(len(bounds)):
-        if x_new[i] < bounds[i][0] or x_new[i] > bounds[i][1]:
-            return False
-    return True
 
 results = {}
 
@@ -63,28 +53,11 @@ for v, c in data_table[:,:,'time'].keys():
     res_l = minimize(func, guess_thin, bounds=bounds_thin, method='SLSQP', options=opts, tol=1.e-12)
     rmse_l = error(merge_coef(res_l.x, fix_thin), Atwood, v, L, c, y0, times, heights)
 
-    margs = {
-        "method": 'SLSQP',
-        "bounds": bounds,
-        "options": opts,
-    }
-    """
-    res_n = basinhopping(func, res_l.x, 
-                minimizer_kwargs=margs, disp=True, 
-                accept_test = accept_test,
-                T=0.001, 
-                niter_success=50, 
-                niter=1000)
-    """
     cma_opts = {
         'bounds' : bounds_thin_cma
     }
     res_cma = cma.fmin(func, guess_thin, 5, cma_opts)
 
-    #res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
-    #rmse_n = error(merge_coef(res_n.x, fix_thin), Atwood, v, L, c, y0, times, heights)
-
-    #results[v, c] = (res_n.x, res_n.fun)
     results[v, c] = (res_cma[0], res_cma[1])
 
 def func(x):
@@ -108,7 +81,6 @@ def func(x):
     return err / count  
 
 res_cma = cma.fmin(func, guess_thin, 5, cma_opts)
-#res_n = differential_evolution(func, bounds_thin, popsize=32, polish=True, tol=0.0001)
 print("Overall error is {}".format(res_cma[1]))
 print(res_cma[0])
 
