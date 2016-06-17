@@ -10,6 +10,7 @@ import numpy as np
 from scipy.optimize import minimize, basinhopping, differential_evolution
 from scipy.interpolate import UnivariateSpline
 
+img_format = 'png'
 
 
 with open("data_table.p", 'rb') as f:
@@ -36,12 +37,25 @@ def accept_test(f_new, x_new, f_old, x_old):
     return True
 
 with open("fit_results.p", "rb") as f:
-    results = pickle.load(f)
+    results_in = pickle.load(f)
+
+results_d = {}
+for v, c in results_in.keys():
+    for i in range(4):
+        results_d[v, c, 'coef', i] = results_in[v,c][0][i]
+        results_d[v, c, 'std', i] = results_in[v,c][2][i]
+    results_d[v, c, 'err', 0] = results_in[v, c][1]
+
+results = CachedSlict(results_d)
 
 for v, c in data_table[:,:,'time'].keys():
     this = data_table[v, c, :]
 
     times, heights = filter_trajectory(this['time'], this['height2'], this['extent_mesh'][2])
+    #times = this['time']; heights = this['height2']
+
+    if heights.size < 4:
+        continue
 
     L = np.sqrt(2) / this["kmin"]
     Atwood = this['atwood'] * this['g']
@@ -53,17 +67,23 @@ for v, c in data_table[:,:,'time'].keys():
     T, H, V, At = model(guess, Atwood, v, L, c, y0, times)
     axs[0].plot(times, H)
 
-    T, H, V, At = model(merge_coef(results[v,c][0], fix_thin), Atwood, v, L, c, y0, times)
+    T, H, V, At = model(merge_coef(results[v,c,'coef',:].values(), fix_thin), Atwood, v, L, c, y0, times)
     spl = UnivariateSpline(times, heights, k=3, s = 0.00000001).derivative()
 
     axs[0].plot(times, H)
     axs[1].plot(times, V / np.sqrt(Atwood * L))
     axs[1].plot(times, spl(times)/ np.sqrt(Atwood * L))
+    axs[0].set_xlabel("Time")
+    axs[0].set_ylabel("Height")
     axs[1].axhline(1./np.sqrt(np.pi))
-    plt.savefig('H-{}-{}.png'.format(v,c))
+    axs[1].axhline(np.sqrt(Atwood * L) / (results[v,c,'coef',1] * v))
+    axs[1].set_xlabel("Time")
+    axs[1].set_ylabel("Velocity")
+    plt.savefig('H-{}-{}.{}'.format(v,c,img_format))
 
-    res = results[v,c]
-    print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res[1]) + str(res[0]))
+    res = results[v,c,:,:]
+    print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res['err',0]) + str(res['coef',:].values()))
+    print(" >> S=" + str(res['std',:].values()))
 
 Grashof = []
 Schmidt = []
@@ -76,11 +96,19 @@ for v, c in data_table[:,:,'time'].keys():
     this = data_table[v,c, :]
     Grashof.append(this['atwood']*this['g']/(v**2 * this['kmin']**3))
     Schmidt.append(v/c)
-    Err.append(results[v,c][1])
-    C1.append(results[v,c][0][0])
-    C2.append(results[v,c][0][1])
-    C3.append(results[v,c][0][2])
-    C5.append(results[v,c][0][3])
+    rerror = results[v,c,'err',0] / min(24.0, np.max(this['height2']))
+    Err.append(rerror)
+    if this['height2'].size < 16 or rerror > 0.01:
+        C1.append(None)
+        C2.append(None)
+        C3.append(None)
+        C5.append(None)
+        continue
+
+    C1.append(results[v,c,'coef',0])
+    C2.append(results[v,c,'coef',1])
+    C3.append(results[v,c,'coef',2])
+    C5.append(results[v,c,'coef',3])
 
 
 def plot_scatter(x, y, c, name):
@@ -92,11 +120,24 @@ def plot_scatter(x, y, c, name):
   ax.set_xlabel('Grashof')
   ax.set_ylabel('Schmidt');
   plt.colorbar()
-  plt.savefig("{}-vs-Gr-Sc.png".format(name))
+  plt.savefig("{}-vs-Gr-Sc.{}".format(name, img_format))
+
+def plot_dep(res, key, name):
+    plt.figure()
+    for c in results[0.0016,:,'coef',key].keys():
+        plt.errorbar(res[:,c,'coef',key].keys(), res[:,c,'coef',key].values(), res[:,c,'std',key].values(), label="C={}".format(c))
+    ax = plt.gca()
+    ax.set_xscale("log")
+    plt.savefig("{}-dep.{}".format(name, img_format))
 
 plot_scatter(Grashof, Schmidt, Err, "Err")
 plot_scatter(Grashof, Schmidt, C1, "C1")
 plot_scatter(Grashof, Schmidt, C2, "C2")
 plot_scatter(Grashof, Schmidt, C3, "C3")
 plot_scatter(Grashof, Schmidt, C5, "C5")
+
+plot_dep(results, 0, 'C1')
+plot_dep(results, 1, 'C2')
+plot_dep(results, 2, 'C3')
+plot_dep(results, 3, 'C5')
 
