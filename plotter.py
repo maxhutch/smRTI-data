@@ -22,7 +22,7 @@ data_table = CachedSlict(data_table_d)
 from model import full_model, error, filter_trajectory, guess
 from model import merge_coef
 from model import fix_thin
-from model import mix_model_direct
+from model import mix_model, both_error
 
 with open("fit_results.p", "rb") as f:
     results_in = pickle.load(f)
@@ -62,6 +62,7 @@ for v, c in data_table[:,:,'time'].keys():
     times, heights, mix = filter_trajectory(
         this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2]
         )
+    mix = 2*(64 - mix)
     #times = this['time']; heights = this['height2']
 
     if len(times) < len(this['time']):
@@ -72,7 +73,7 @@ for v, c in data_table[:,:,'time'].keys():
 
     L = np.sqrt(2) / this["kmin"]
     Atwood = this['atwood'] * this['g']
-    y0 = [this["amp0"]/this["kmin"], 0., 2*this['delta']*L*L/np.sqrt(np.pi)]
+    y0 = [this["amp0"]/this["kmin"], 0.]
 
     offset = this['delta']**2. / c    
 
@@ -81,9 +82,11 @@ for v, c in data_table[:,:,'time'].keys():
     #T, H, V, MM = model(guess, Atwood, v, L, c, y0, times)
     #axs[0].plot(times, H)
     #print(results[v,c,'coef',:].values())
-    T, MO = mix_model_direct(results[v,c,'mix_coef',:].values(), L, c, y0, times, h_spline)
+    T, MO = mix_model(results[v,c,'mix_coef',:].values(), L, c, this['delta'], times, h_spline)
 
-    T, H, V, MM = full_model(merge_coef(results[v,c,'coef',:].values(), fix_thin), Atwood, v, L, c, y0, times)
+    T, H, V, MM = full_model(merge_coef(results[v,c,'coef',:].values(), fix_thin), Atwood, v, L, c, this['delta'], y0, times)
+
+    dyn_error, mix_error = both_error(merge_coef(results[v,c,'coef',:].values(), fix_thin), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
     # Mixing plot
     fig, axs = plt.subplots(1,2, figsize=(8,8))
@@ -93,7 +96,7 @@ for v, c in data_table[:,:,'time'].keys():
     axs[0].set_ylabel("Height")
     #axs[0].legend()
 
-    axs[1].plot(times, 2*(64 - mix)/(L*L), label="Simulation")
+    axs[1].plot(times, mix/(L*L), label="Simulation")
     axs[1].plot(times, MO/(L*L), label="Model")
     delta = np.sqrt((times+offset) * c)
     #axs[1].plot(times, 2*delta/np.sqrt(np.pi) * (1 + 2.*heights), label="Model")
@@ -102,7 +105,7 @@ for v, c in data_table[:,:,'time'].keys():
     #axs[1].plot(times, DM, label="Model")
     #axs[1].legend()
 
-    plt.savefig('M-{}-{}.{}'.format(v,c,img_format))
+    plt.savefig('M-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
     plt.close()
 
     fig, axs = plt.subplots(1, 3, figsize=(12,8))
@@ -110,21 +113,22 @@ for v, c in data_table[:,:,'time'].keys():
     axs[0].plot(times, H, label="Model")
     axs[0].set_xlabel("Time")
     axs[0].set_ylabel("Height")
-    axs[0].legend()
+    axs[0].legend(loc=2)
 
     axs[1].plot(times, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation")
     axs[1].plot(times, V / np.sqrt(Atwood * L), label="Model")
-    axs[1].legend()
+    #axs[1].legend()
     axs[1].axhline(1./np.sqrt(np.pi))
     axs[1].axhline(L * np.sqrt(Atwood * L) / (results[v,c,'coef',1] * v))
     axs[1].set_xlabel("Time")
     axs[1].set_ylabel("Velocity")
 
-    axs[2].plot(times, 2*(64 - mix)/(L*L), label="Simulation")
+    axs[2].plot(times, mix/(L*L), label="Simulation")
     axs[2].plot(times, MM/(L*L), label="Model")
-    axs[2].legend()
+    #axs[2].legend()
 
-    plt.savefig('H-{}-{}.{}'.format(v,c,img_format))
+    axs[1].set_title(r"Fit of $\nu=${} and D={}".format(v, c))
+    plt.savefig('H-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
     plt.close()
 
     plt.figure()
@@ -143,7 +147,8 @@ for v, c in data_table[:,:,'time'].keys():
 
     res = results[v,c,:,:]
     print("V={}, D={}, C=[{:8.3f}, {:8.3f}], Err={err:8.3f}".format(v, c, *(res['mix_coef',:].values()), err=res['mix_err',0]))
-    #print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res['err',0]) + str(res['coef',:].values()))
+    print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res['err',0]) + str(res['coef',:].values()))
+    print("LW: V={}, D={}, C=[{:8.3f}, {:8.3f}, {:8.3f}, {:8.3f}, {:8.3f}]: [{derr:8.3f}, {merr:8.3f}]".format(v, c, *(res['coef',:].values()), derr=dyn_error, merr=results[v, c, 'mix_err', 0]))
     #print(" >> S=" + str(res['std',:].values()))
 
 Grashof = []
@@ -155,7 +160,7 @@ C2 = []
 C3 = []
 C5 = []
 C7 = []
-for v, c in data_table[:,:,'time'].keys():
+for v, c in results[:,:,'err', 0].keys():
     this = data_table[v,c, :]
     times, heights, mix = filter_trajectory(this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2])
     Grashof.append(this['atwood']*this['g']/(v**2 * this['kmin']**3))
@@ -164,7 +169,7 @@ for v, c in data_table[:,:,'time'].keys():
     rerror = results[v,c,'err',0] / min(24.0, np.max(this['height2']))
     Err.append(rerror)
     #if this['height2'].size < 64 or rerror > 0.01:
-    if heights.size < 64:
+    if heights.size < 64 or np.max(heights) < np.sqrt(2):
         C1.append(None)
         C2.append(None)
         C3.append(None)
