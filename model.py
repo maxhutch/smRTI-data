@@ -13,19 +13,15 @@ def filter_trajectory(times, heights, mass, L):
 
     return times[:stop], heights[:stop], mass[:stop]
 
-guess = [1.0, 1.0, 113.0, 1.0, 1./(2*np.pi), 4.0, 1.0, 1.0, 1./(2*np.pi)]
-bounds = ((1, 1), (0, 10), (0,400), (0.01, 100), (1./(2*np.pi), 1./(2*np.pi)), (0.01, 100), (1,1))
-
 guess_thin = [1.0, 113.0, 1.0, 4.0, 1.0]
-bounds_thin = ((0, 10), (0,400), (0.01, 100), (0.01, 100), (0.01, 100), (0.01, 100))
 fix_thin = [1.0, 1./(2.*np.pi), 1.0, 1./(np.pi)]
-bounds_thin_cma = [[0.1,   1.0, 0.1, 0.0, 0.1],
-                   [2.0, 200.0, 5.0, 5.0, 5.0] ]
+bounds_thin_cma = [[0.05,   1.0, 0.05, 2.0, 0.1],
+                   [2.00, 200.0, 10.0, 5.0, 3.0] ]
 
 thin_scaling = [1.0, 100.0, 1.0, 0.0001, 1.0]
 
 #mix_bounds_cma = [(0.0, 0.001, 0.9, 0.9), (20.0, 1000.0, 1.1, 1.1)]
-mix_bounds_cma = [(0.0,), (5.0,)]
+#mix_bounds_cma = [(0.0,), (5.0,)]
 
 def get_scaling(bounds):
     scaling_of_vars = np.ones(len(bounds[0]))
@@ -33,18 +29,18 @@ def get_scaling(bounds):
         scaling_of_vars[i] = (bounds[1][i] - bounds[0][i]) / 2.
     return scaling_of_vars
 
-scaling_of_mix = np.ones(len(mix_bounds_cma[0]))
-for i in range(scaling_of_mix.shape[0]):
-    scaling_of_mix[i] = (mix_bounds_cma[1][i] - mix_bounds_cma[0][i]) / 2.
-
 def merge_coef(var, fix):
     return [fix[0], var[0], var[1], var[2], fix[1], var[3], fix[2], var[4], fix[3]]
 
 def f_dyn(t, y, C, Atwood, visc, L, mixed_fluid):
     M  = (C[4]*L + C[3] * abs(y[0])) * L * L
     V  = (C[6]*L + C[5] * abs(y[0])) * L * L
-    
-    mix = max(1. - mixed_fluid / V, 0.0)
+   
+    if isinstance(mixed_fluid, float):
+        mix = 1. - mixed_fluid / V
+    else:
+        mix = 1. - mixed_fluid(t) / V
+
     #mix = 1. - y[2] / (abs(y[0]) * L * L)
          
     F = C[0] * Atwood * L * L * y[0] * mix
@@ -52,7 +48,6 @@ def f_dyn(t, y, C, Atwood, visc, L, mixed_fluid):
     F += - C[2] * visc * abs(y[0]) * y[1] 
 
     return [y[1], F / M]
-
 
 def full_f(t, y, C, Atwood, visc, L, diff, delta_i):
     mixed_fluid = mix_direct([C[5], C[6]], L, diff, delta_i, t, y[0])
@@ -73,6 +68,13 @@ def integrate(r, times):
             soln[i].append(r.y[i])
     soln_np = [times,] + [np.array(x) for x in soln]
     return soln_np
+
+def dyn_model(C, Atwood, visc, L, mix, y0, times):
+    r = ode(f_dyn).set_integrator('vode', method='bdf', atol=1.0e-6, with_jacobian=False)
+    r.set_initial_value(y0, times[0]).set_f_params(C, Atwood, visc, L, mix)
+
+    [T, H, v] = integrate(r, times)
+    return T, H, v
 
 from scipy.integrate import ode
 def full_model(C, Atwood, visc, L, diff, delta_i, y0, times):
@@ -118,6 +120,12 @@ def both_error(coeffs, Atwood, v, L, c, delta_i, y0, times, heights, mix):
     dyn_error = np.sqrt(np.sum(np.square(H - heights))/heights.size)
     mix_error = np.sqrt(np.sum(np.square(mix - MM)) / (L**4.) / heights.size)
     return dyn_error, mix_error
+
+def dyn_error(coeffs, Atwood, v, L, times, height, mix):
+    T, H, V = dyn_model(coeffs, Atwood, v, L, mix, times)
+
+    se = np.sum(np.square(H - height))
+    return np.sqrt(se / times.size)
 
 def mix_error(coeffs, L, c, delta_i, times, h_func, mix):
     T, DM = mix_model(coeffs, L, c, delta_i, times, h_func)

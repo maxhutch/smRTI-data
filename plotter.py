@@ -19,7 +19,7 @@ with open("data_table.p", 'rb') as f:
 
 data_table = CachedSlict(data_table_d)
 
-from model import full_model, error, filter_trajectory, guess
+from model import full_model, error, filter_trajectory
 from model import merge_coef
 from model import fix_thin
 from model import mix_model, both_error
@@ -148,7 +148,9 @@ for v, c in data_table[:,:,'time'].keys():
     res = results[v,c,:,:]
     print("V={}, D={}, C=[{:8.3f}, {:8.3f}], Err={err:8.3f}".format(v, c, *(res['mix_coef',:].values()), err=res['mix_err',0]))
     print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res['err',0]) + str(res['coef',:].values()))
-    print("LW: V={}, D={}, C=[{:8.3f}, {:8.3f}, {:8.3f}, {:8.3f}, {:8.3f}]: [{derr:8.3f}, {merr:8.3f}]".format(v, c, *(res['coef',:].values()), derr=dyn_error, merr=results[v, c, 'mix_err', 0]))
+    if np.max(heights) < np.sqrt(2):
+        continue
+    print("LW: V={}, D={}, C=[{:8.3f}, {:8.3f}, {:8.3f}, {:8.3f}, {:8.3f}]: [{derr:8.3f}, {merr:8.3f}]".format(v, c, *(res['coef',:].values()), derr=dyn_error, merr=res['mix_err', 0]))
     #print(" >> S=" + str(res['std',:].values()))
 
 Grashof = []
@@ -178,19 +180,26 @@ for v, c in results[:,:,'err', 0].keys():
         print("Skipping {} {}".format(v,c))
         continue
 
-    C1.append(results[v,c,'coef',0])
-    C2.append(results[v,c,'coef',1])
-    C3.append(results[v,c,'coef',2])
-    C5.append(results[v,c,'coef',3])
-    C7.append(results[v,c,'coef',4])
+    res = results[v,c,:,:]
+    C1.append(res['coef',0])
+    C2.append(res['coef',1])
+    C3.append(res['coef',2])
+    C5.append(res['coef',3])
+    C7.append(res['coef',4])
 
 
 def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     plt.figure()
     plt.scatter(x, y, c=c, s=400)
     ax = plt.gca()
-    ax.set_xscale("log")
-    ax.set_yscale("log")
+    ax.grid()
+    ax.set_xscale("log", basex=2.0)
+    ax.set_yscale("log", basey=2.0)
+    if xlabel == 'Grashof':
+        ax.set_xlim(128, 1048576)
+    else:
+        ax.set_xlim(2048, 1048576)
+        
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel);
     ax.set_title("{} vs {} and {} numbers".format(name, xlabel, ylabel))

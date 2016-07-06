@@ -17,9 +17,9 @@ with open("data_table.p", 'rb') as f:
 data_table = CachedSlict(data_table_d)
 
 from model import error, filter_trajectory
-from model import guess, fix_thin, guess_thin, bounds_thin, bounds_thin_cma
+from model import fix_thin, guess_thin, bounds_thin_cma
 from model import merge_coef
-from model import mix_error, mix_bounds_cma, mix_error
+from model import mix_error, mix_error
 from model import get_scaling, thin_scaling
 
 bounds_cma = [(1.0, 0.01, 0.01, 0.01, 1./(2*np.pi), 0.01, 1.0),
@@ -74,14 +74,6 @@ for v, c in data_table[:,:,'time'].keys():
     #opts = {'maxiter': 1000, 'disp': True}
     #res_l = minimize(func, start, bounds=bounds_thin, method='SLSQP', options=opts, tol=1.e-12)
     #rmse_l = error(merge_coef(res_l.x, fix_thin), Atwood, v, L, c, y0, times, heights, mix)
-
-    mix_opts = {
-        'bounds'    : mix_bounds_cma,
-#        'tolfun'    : 1.0e-8,
-        'scaling_of_variables' : get_scaling(mix_bounds_cma),
-        'popsize'   : 256,
-#        'maxfevals' : 10000
-    }
 
     #mix_res = cma.fmin(func0, [4.0,], 1.0, mix_opts)
     def accept_test(f_new, x_new):
