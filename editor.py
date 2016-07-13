@@ -24,9 +24,12 @@ if exists("fit_results.p"):
     with open("fit_results.p", "rb") as f:
         results = pickle.load(f)
 else:
-    results = {}
+    exit()
 
-for v, c in data_table[:,:,'time'].keys():
+override = {}
+override[0.0016, 0.0016] = [ 0.000,   61.079,  1.326,  1.026]
+
+for v, c in override:
 
     this = data_table[v, c, :]
 
@@ -52,7 +55,7 @@ for v, c in data_table[:,:,'time'].keys():
 
     if (v,c) in results:
         start_mix = results[v,c]["C_mix"]
-        start_dyn = results[v,c]["C_dyn"]
+        start_dyn = override[v,c]
 #        if results[v,c]["E_dyn"] < .1:
 #            continue
 #        else:

@@ -13,15 +13,33 @@ def filter_trajectory(times, heights, mass, L):
 
     return times[:stop], heights[:stop], mass[:stop]
 
-guess_thin = [1.0, 113.0, 1.0, 4.0, 1.0]
-fix_thin = [1.0, 1./(2.*np.pi), 1.0, 1./(np.pi)]
-bounds_thin_cma = [[0.05,   1.0, 0.05, 2.0, 0.1],
-                   [2.00, 200.0, 10.0, 5.0, 3.0] ]
+guess_dyn = [1.0, 113.0, 1.0, 1.0]
+guess_mix = [4.0,]
 
-thin_scaling = [1.0, 100.0, 1.0, 0.0001, 1.0]
+fix = [
+        1.0,  #C_dyn[0]
+        1./(2.*np.pi), #C_dyn[4]
+        1./(np.pi), #C_dyn[6]
+        1.0, #C_mix[1]
+      ]
 
-#mix_bounds_cma = [(0.0, 0.001, 0.9, 0.9), (20.0, 1000.0, 1.1, 1.1)]
-#mix_bounds_cma = [(0.0,), (5.0,)]
+bounds_dyn = [[ 0.00,   0.0, 1.00,  1.0],
+              [10.00, 400.0, 8.002, 8.002] ]
+scaling_dyn = [1.0,  100.0, 2.001, 2.001]
+
+bounds_dyn_t = []
+for i in range(len(guess_dyn)):
+    bounds_dyn_t.append((bounds_dyn[0][i], bounds_dyn[1][i]))
+
+bounds_mix = [(1., 5.),]
+
+
+def exp_dyn(x):
+    return [fix[0], x[0], x[1], x[2], fix[1], x[3], fix[2]]
+
+def exp_mix(x):
+    return [x[0], fix[3]]
+
 
 def get_scaling(bounds):
     scaling_of_vars = np.ones(len(bounds[0]))
@@ -40,8 +58,6 @@ def f_dyn(t, y, C, Atwood, visc, L, mixed_fluid):
         mix = 1. - mixed_fluid / V
     else:
         mix = 1. - mixed_fluid(t) / V
-
-    #mix = 1. - y[2] / (abs(y[0]) * L * L)
          
     F = C[0] * Atwood * L * L * y[0] * mix
     F += - C[1] * L * L * y[1] * abs(y[1])
@@ -49,10 +65,10 @@ def f_dyn(t, y, C, Atwood, visc, L, mixed_fluid):
 
     return [y[1], F / M]
 
-def full_f(t, y, C, Atwood, visc, L, diff, delta_i):
-    mixed_fluid = mix_direct([C[5], C[6]], L, diff, delta_i, t, y[0])
+def f_full(t, y, C_dyn, C_mix, Atwood, visc, L, diff, delta_i):
+    mixed_fluid = mix_direct(C_mix, L, diff, delta_i, t, y[0])
 
-    return f_dyn(t, y, [C[0], C[1], C[2], C[3], C[4], C[7], C[8]], Atwood, visc, L, mixed_fluid)
+    return f_dyn(t, y, C_dyn, Atwood, visc, L, mixed_fluid)
 
 def integrate(r, times):
     Ny = len(r.y)
@@ -77,13 +93,13 @@ def dyn_model(C, Atwood, visc, L, mix, y0, times):
     return T, H, v
 
 from scipy.integrate import ode
-def full_model(C, Atwood, visc, L, diff, delta_i, y0, times):
+def full_model(C_dyn, C_mix, Atwood, visc, L, diff, delta_i, y0, times):
 
-    r = ode(full_f).set_integrator('vode', method='bdf', atol=1.0e-6, with_jacobian=False)
-    r.set_initial_value(y0, times[0]).set_f_params(C, Atwood, visc, L, diff, delta_i)
+    r = ode(f_full).set_integrator('vode', method='bdf', atol=1.0e-6, with_jacobian=False)
+    r.set_initial_value(y0, times[0]).set_f_params(C_dyn, C_mix, Atwood, visc, L, diff, delta_i)
    
     [T, H, v] = integrate(r, times)
-    MM = mix_direct([C[5], C[6]], L, diff, delta_i, T, H)
+    MM = mix_direct(C_mix, L, diff, delta_i, T, H)
 
     return T, H, v, MM
 
@@ -91,7 +107,6 @@ def mix_direct(C, L, diff, delta_i, time, height):
     offset = delta_i**2. / (4. * diff)
     delta = 2. * np.sqrt((time+offset) * diff)
     diam = C[0] * L/(2.*4)
-    #diam = L/(2.0)
     SA =  (C[1] * L + C[0]*height) * L
     integral = (
                  2*delta/np.sqrt(np.pi)*(1-np.exp(-(diam**2./np.square(delta)))) 
@@ -104,31 +119,28 @@ def mix_model(C, L, diff, delta_i, times, h_func):
     return times, mix_direct(C, L, diff, delta_i, times, h_func(times))
 
 from numpy.linalg import norm
-def error(coeffs, Atwood, v, L, c, delta_i, y0, times, heights, mix):
-    try:
-        T, H, V, MM = full_model(coeffs, Atwood, v, L, c, delta_i, y0, times)
-    except RuntimeError:
-        return 1000.0
-    se = 0.9 * np.sum(np.square(H - heights)) + 0.1 * np.sum(np.square(mix - MM)) / (L**4.)
-    return np.sqrt(se / heights.size)
+def error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix):
+    derr, merr = both_error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix)
+    se = 0.9 * derr * derr + 0.1 * merr * merr 
+    return np.sqrt(se)
 
-def both_error(coeffs, Atwood, v, L, c, delta_i, y0, times, heights, mix):
+def both_error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix):
     try:
-        T, H, V, MM = full_model(coeffs, Atwood, v, L, c, delta_i, y0, times)
+        T, H, V, MM = full_model(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times)
     except RuntimeError:
-        return 1000.0
+        return 1000.0, 1000.0
     dyn_error = np.sqrt(np.sum(np.square(H - heights))/heights.size)
     mix_error = np.sqrt(np.sum(np.square(mix - MM)) / (L**4.) / heights.size)
     return dyn_error, mix_error
 
-def dyn_error(coeffs, Atwood, v, L, times, height, mix):
-    T, H, V = dyn_model(coeffs, Atwood, v, L, mix, times)
+def dyn_error(C_dyn, Atwood, v, L, y0, times, height, mix):
+    T, H, V = dyn_model(C_dyn, Atwood, v, L, mix, y0, times)
 
     se = np.sum(np.square(H - height))
     return np.sqrt(se / times.size)
 
-def mix_error(coeffs, L, c, delta_i, times, h_func, mix):
-    T, DM = mix_model(coeffs, L, c, delta_i, times, h_func)
+def mix_error(C_mix, L, c, delta_i, times, h_func, mix):
+    T, DM = mix_model(C_mix, L, c, delta_i, times, h_func)
 
     se = np.sum(np.square(mix - DM)) / (L**4.)
     return np.sqrt(se / times.size)
