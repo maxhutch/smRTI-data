@@ -10,6 +10,7 @@ import numpy as np
 from scipy.optimize import minimize, basinhopping, differential_evolution
 from scipy.interpolate import UnivariateSpline
 from scipy.special import erf
+from sys import argv
 
 img_format = 'png'
 
@@ -23,7 +24,17 @@ from model import exp_mix, mix_model
 from model import exp_dyn, dyn_model
 from model import both_error, full_model, filter_trajectory
 
-with open("fit_results.p", "rb") as f:
+if len(argv) == 3:
+    todo = [(float(argv[1]), float(argv[2])),]
+    path = "fit_results.p"
+if len(argv) == 2:
+    path = argv[1]
+    todo = data_table[:,:,'time'].keys()
+else:
+    path = "fit_results.p"
+    todo = data_table[:,:,'time'].keys()
+
+with open(path, "rb") as f:
     results_in = pickle.load(f)
 
 """
@@ -44,7 +55,11 @@ for v, c in results_in.keys():
 #results = CachedSlict(results_d)
 results = results_in
 
-for v, c in data_table[:,:,'time'].keys():
+
+for v, c in todo:
+
+    if v < 0.0002:
+        continue
 
     """
     if v !=  0.0008 or c != 0.0008:
@@ -179,25 +194,48 @@ for v, c in data_table[:,:,'time'].keys():
                   v, c, *(res['C_dyn']), C5=res['C_mix'][0], derr0=res['E_dyn'], merr0=res['E_mix'], derr=dyn_error, merr=mix_error))
     #print(" >> S=" + str(res['std',:].values()))
 
+
 Grashof = []
 Schmidt = []
 Rayleigh = []
-Err = []
+RDE = []
+RME = []
 C1 = []
 C2 = []
 C3 = []
 C5 = []
 C7 = []
+depth = []
 status = []
 for v, c in results.keys():
+    if v < 0.0002:
+        continue
+
     this = data_table[v,c, :]
     times, heights, mix = filter_trajectory(this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2])
+    mix = 2*(64 - mix)
+
     Grashof.append(this['atwood']*this['g']/(v**2 * this['kmin']**3))
     Rayleigh.append(this['atwood']*this['g']/(v*c * this['kmin']**3))
     Schmidt.append(v/c)
-    rerror = results[v,c]['E_dyn'] / min(24.0, np.max(this['height2']))
-    Err.append(rerror)
-    #if this['height2'].size < 64 or rerror > 0.01:
+
+    if heights.size < 64 or np.max(heights) < np.sqrt(2): # or not (trunc or done):
+        RDE.append(None)
+        RME.append(None)
+        C1.append(None)
+        C2.append(None)
+        C3.append(None)
+        C5.append(None)
+        C7.append(None)
+        depth.append(None)
+        print("Skipping {} {}".format(v,c))
+        continue
+
+    dyn_error, mix_error = both_error(exp_dyn(results[v,c]['C_dyn']), exp_mix(results[v,c]['C_mix']), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
+
+
+    rel_dyn_error = dyn_error / np.max(heights)
+    rel_mix_error = mix_error / np.max(mix)
 
     trunc = False
     done = False
@@ -211,33 +249,20 @@ for v, c in results.keys():
         done = True
         print(v, c, "got done")
 
-
-    if heights.size < 64 or np.max(heights) < np.sqrt(2): # or not (trunc or done):
-        C1.append(None)
-        C2.append(None)
-        C3.append(None)
-        C5.append(None)
-        C7.append(None)
-        print("Skipping {} {}".format(v,c))
-        continue
-
     status.append(color)
+    depth.append(np.max(heights))
     res = results[v,c]
+    RDE.append(rel_dyn_error)
+    RME.append(rel_mix_error)
     C1.append(res['C_dyn'][0])
     C2.append(res['C_dyn'][1])
     C3.append(res['C_dyn'][2])
     C5.append(res['C_mix'][0])
     C7.append(res['C_dyn'][3])
 
-
-print("LENS: ", len(status), len(C1))
-
 def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     plt.figure()
-    if name is not "Error":
-        plt.scatter(x, y, c=c, s=400, edgecolors=status, linewidths=2)
-    else:
-        plt.scatter(x, y, c=c, s=400)
+    plt.scatter(x, y, c=c, s=400, edgecolors=status, linewidths=2)
     plt.set_cmap('plasma')
     ax = plt.gca()
     ax.grid()
@@ -266,8 +291,10 @@ def plot_dep(res, key, name):
     plt.close()
 """
 
-plot_scatter(Grashof, Schmidt, Err, "Error")
-plot_scatter(Rayleigh, Schmidt, Err, "Error", xlabel='Rayleigh')
+plot_scatter(Grashof, Schmidt, RDE, "DynError")
+plot_scatter(Rayleigh, Schmidt, RDE, "DynError", xlabel='Rayleigh')
+plot_scatter(Grashof, Schmidt, RME, "MixError")
+plot_scatter(Rayleigh, Schmidt, RME, "MixError", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, C1, "C1")
 plot_scatter(Rayleigh, Schmidt, C1, "C1", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, C2, "C2")
@@ -278,6 +305,9 @@ plot_scatter(Grashof, Schmidt, C5, "C5")
 plot_scatter(Rayleigh, Schmidt, C5, "C5", xlabel="Rayleigh")
 plot_scatter(Grashof, Schmidt, C7, "C7")
 plot_scatter(Rayleigh, Schmidt, C7, "C7", xlabel="Rayleigh")
+
+plot_scatter(Grashof, Schmidt, depth, "Depth")
+plot_scatter(Rayleigh, Schmidt, depth, "Depth", xlabel='Rayleigh')
 
 """
 plot_dep(results, 0, 'C1')

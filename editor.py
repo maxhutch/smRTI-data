@@ -27,7 +27,9 @@ else:
     exit()
 
 override = {}
-override[0.0016, 0.0016] = [ 0.000,   61.079,  1.326,  1.026]
+override[0.0016, 0.0016] = [ 0.100,   70.,  1.30,  0.60]
+do_minimize = True
+
 
 for v, c in override:
 
@@ -96,22 +98,21 @@ for v, c in override:
         'tolfun'  : 1.0e-9,
 #        'fixed_variables' : {3:mix_res.x[0]},
         'scaling_of_variables' : scaling_dyn, #get_scaling(bounds_thin_cma), 
-        'popsize' : 256,
+        'popsize' : 16,
 #        'verbose' : 0,
 #        'tolfacupx' : 1.0e12,
 #        'maxfevals' : 256
     }
-    res_cma = cma.fmin(func1, start_dyn, 1.0, cma_opts)
 
-    res_slsqp = minimize(func1, res_cma[0], method='SLSQP', bounds=bounds_dyn_t, tol=1.0e-12, options={'ftol': 1.0e-12})
-
-    results[v,c]["C_dyn"] = res_slsqp.x
-    results[v,c]["E_dyn"] = res_slsqp.fun
+    if do_minimize:
+        res_cma = cma.fmin(func1, start_dyn, 1.0, cma_opts)
+        res_slsqp = minimize(func1, res_cma[0], method='SLSQP', bounds=bounds_dyn_t, tol=1.0e-12, options={'ftol': 1.0e-12})
+        results[v,c]["C_dyn"] = res_slsqp.x
+        results[v,c]["E_dyn"] = res_slsqp.fun
+    else:
+        results[v,c]["C_dyn"] = start_dyn
+        results[v,c]["E_dyn"] = func1(start_dyn)
 
     with open("fit_results.p", "wb") as f:
         pickle.dump(results, f)
-
-for v, c in data_table[:,:,'time'].keys():
-    res = results[v,c]
-    print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res[1]) + str(res[0]))
 

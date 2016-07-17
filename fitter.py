@@ -23,10 +23,15 @@ from model import mix_error, guess_mix, bounds_mix, exp_mix
 if exists("fit_results.p"):
     with open("fit_results.p", "rb") as f:
         results = pickle.load(f)
+    with open("reg_fit_results.p", "rb") as f:
+        reg_results = pickle.load(f)
 else:
     results = {}
 
-for v, c in data_table[:,:,'time'].keys():
+todo = list(data_table[:,:,'time'].keys())
+todo.reverse()
+
+for v, c in todo:
 
     this = data_table[v, c, :]
 
@@ -51,8 +56,8 @@ for v, c in data_table[:,:,'time'].keys():
     m_spline = UnivariateSpline(times, mix, k=3, s = 0.00000001)
 
     if (v,c) in results:
-        start_mix = results[v,c]["C_mix"]
-        start_dyn = results[v,c]["C_dyn"]
+        start_mix = reg_results[v,c]["C_mix"]
+        start_dyn = reg_results[v,c]["C_dyn"]
 #        if results[v,c]["E_dyn"] < .1:
 #            continue
 #        else:
@@ -61,6 +66,8 @@ for v, c in data_table[:,:,'time'].keys():
         results[v,c] = {}
         start_mix = guess_mix
         start_dyn = guess_dyn
+
+    reg_results[v,c] = {}
 
     def func0(x):
         return mix_error(exp_mix(x), L, c, this['delta'], times, h_spline, mix)
@@ -79,6 +86,10 @@ for v, c in data_table[:,:,'time'].keys():
 
     results[v,c]["C_mix"] = mix_res.x
     results[v,c]["E_mix"] = mix_res.fun
+
+    reg_results[v,c]["C_mix"] = mix_res.x
+    reg_results[v,c]["E_mix"] = mix_res.fun
+ 
  
     def func1(x):
         #return dyn_error(exp_dyn(x), Atwood, v, L, y0, times, heights, m_spline)
@@ -93,7 +104,7 @@ for v, c in data_table[:,:,'time'].keys():
         'tolfun'  : 1.0e-9,
 #        'fixed_variables' : {3:mix_res.x[0]},
         'scaling_of_variables' : scaling_dyn, #get_scaling(bounds_thin_cma), 
-        'popsize' : 256,
+        'popsize' : 32,
 #        'verbose' : 0,
 #        'tolfacupx' : 1.0e12,
 #        'maxfevals' : 256
@@ -105,10 +116,26 @@ for v, c in data_table[:,:,'time'].keys():
     results[v,c]["C_dyn"] = res_slsqp.x
     results[v,c]["E_dyn"] = res_slsqp.fun
 
+    def func2(x):
+        return error(exp_dyn(x), exp_mix(results[v,c]["C_mix"]), Atwood, v, L, c, this['delta'], y0, times, heights, mix,
+                     reg_param = 0.1 * res_slsqp.fun) 
+
+    res_cma = cma.fmin(func2, res_slsqp.x, 1.0, cma_opts)
+    res_slsqp = minimize(func2, res_cma[0], method='SLSQP', bounds=bounds_dyn_t, tol=1.0e-12, options={'ftol': 1.0e-12})
+
+    reg_results[v,c]["C_dyn"] = res_slsqp.x
+    reg_results[v,c]["E_dyn"] = res_slsqp.fun
+
     with open("fit_results.p", "wb") as f:
         pickle.dump(results, f)
 
+    with open("reg_fit_results.p", "wb") as f:
+        pickle.dump(reg_results, f)
+
+
+"""
 for v, c in data_table[:,:,'time'].keys():
     res = results[v,c]
     print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res[1]) + str(res[0]))
+"""
 

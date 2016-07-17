@@ -13,7 +13,7 @@ def filter_trajectory(times, heights, mass, L):
 
     return times[:stop], heights[:stop], mass[:stop]
 
-guess_dyn = [1.0, 113.0, 1.0, 1.0]
+guess_dyn = np.array([0.64, 113.0, 1.0, 1.0])
 guess_mix = [4.0,]
 
 fix = [
@@ -24,8 +24,9 @@ fix = [
       ]
 
 bounds_dyn = [[ 0.00,   0.0, 1.00,  1.0],
-              [10.00, 400.0, 8.002, 8.002] ]
-scaling_dyn = [1.0,  100.0, 2.001, 2.001]
+              [10.00, 400.0, 8.0,   8.002] ]
+scaling_dyn = [1.0,  50.0, 3.501, 3.501]
+reg_param = 0.0
 
 bounds_dyn_t = []
 for i in range(len(guess_dyn)):
@@ -40,6 +41,7 @@ def exp_dyn(x):
 def exp_mix(x):
     return [x[0], fix[3]]
 
+guess_dyn_full = np.array(exp_dyn(guess_dyn))
 
 def get_scaling(bounds):
     scaling_of_vars = np.ones(len(bounds[0]))
@@ -51,7 +53,9 @@ def merge_coef(var, fix):
     return [fix[0], var[0], var[1], var[2], fix[1], var[3], fix[2], var[4], fix[3]]
 
 def f_dyn(t, y, C, Atwood, visc, L, mixed_fluid):
-    M  = (C[4]*L + C[3] * abs(y[0])) * L * L
+    x = (2 * np.pi) ** (3./2) * visc / np.sqrt(Atwood * L**3) 
+    foo = 2 * x * (np.sqrt(1.0 + x*x) + x)
+    M  = (C[4]*L*(1.0+foo) + C[3] * abs(y[0])) * L * L
     V  = (C[6]*L + C[5] * abs(y[0])) * L * L
    
     if isinstance(mixed_fluid, float):
@@ -119,10 +123,11 @@ def mix_model(C, L, diff, delta_i, times, h_func):
     return times, mix_direct(C, L, diff, delta_i, times, h_func(times))
 
 from numpy.linalg import norm
-def error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix):
+def error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix, reg_param = 0.0):
     derr, merr = both_error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix)
-    se = 0.9 * derr * derr + 0.1 * merr * merr 
-    return np.sqrt(se)
+    se = derr * derr 
+    return np.sqrt(se) + reg_param * np.sqrt(np.sum(np.square((C_dyn - guess_dyn_full)/guess_dyn_full)))
+
 
 def both_error(C_dyn, C_mix, Atwood, v, L, c, delta_i, y0, times, heights, mix):
     try:
@@ -137,7 +142,8 @@ def dyn_error(C_dyn, Atwood, v, L, y0, times, height, mix):
     T, H, V = dyn_model(C_dyn, Atwood, v, L, mix, y0, times)
 
     se = np.sum(np.square(H - height))
-    return np.sqrt(se / times.size)
+    re = np.sqrt(np.sum(np.square((np.array(C_dyn) - guess_dyn_full)/guess_dyn_full)))
+    return np.sqrt(se / times.size) + reg_param * re
 
 def mix_error(C_mix, L, c, delta_i, times, h_func, mix):
     T, DM = mix_model(C_mix, L, c, delta_i, times, h_func)
