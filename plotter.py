@@ -11,9 +11,18 @@ from scipy.optimize import minimize, basinhopping, differential_evolution
 from scipy.interpolate import UnivariateSpline
 from scipy.special import erf
 from sys import argv
+from argparse import ArgumentParser
+from json import loads
 
-img_format = 'png'
+img_format = 'eps'
+title = False
 
+parser = ArgumentParser(description="Plotter for smRTI data")
+parser.add_argument("--traj", action="store_true", default=False)
+parser.add_argument("--only", type=str, default=None)
+parser.add_argument("params", type=str, default="fit_results.p")
+
+args = parser.parse_args()
 
 with open("data_table.p", 'rb') as f:
     data_table_d = pickle.load(f)
@@ -24,56 +33,26 @@ from model import exp_mix, mix_model
 from model import exp_dyn, dyn_model
 from model import both_error, full_model, filter_trajectory
 
-if len(argv) == 3:
-    todo = [(float(argv[1]), float(argv[2])),]
-    path = "fit_results.p"
-if len(argv) == 2:
-    path = argv[1]
-    todo = data_table[:,:,'time'].keys()
-else:
-    path = "fit_results.p"
-    todo = data_table[:,:,'time'].keys()
-
-with open(path, "rb") as f:
+with open(args.params, "rb") as f:
     results_in = pickle.load(f)
 
-"""
-results_d = {}
-for v, c in results_in.keys():
-    if len(results_in[v,c]) < 4:
-        continue
 
-    for i in range(len(results_in[v,c][0])):
-        results_d[v, c, 'coef', i] = results_in[v,c][0][i]
-        results_d[v, c, 'std', i] = results_in[v,c][2][i]
-    results_d[v, c, 'err', 0] = results_in[v, c][1]
-    for i in range(len(results_in[v,c][3])):
-        results_d[v, c, 'mix_coef', i] = results_in[v,c][3][i]
-    results_d[v, c, 'mix_err', 0] = results_in[v, c][4]
-"""
+if args.only is not None:
+    todo = loads(args.only)
+else:
+    todo = data_table[:,:,'time'].keys()
+
+if not args.traj:
+    todo = []
 
 #results = CachedSlict(results_d)
 results = results_in
 
 
-for v, c in todo:
+def plot_model(this, C_mix, C_dyn):
+    v = this['viscosity']
+    c = this['conductivity']
 
-    if v < 0.0002:
-        continue
-
-    """
-    if v !=  0.0008 or c != 0.0008:
-        continue
-
-    results_d[v,c,'coef',0] = 4.
-    results_d[v,c,'coef',1] = 400.
-    results_d[v,c,'coef',2] = 2.
-    results_d[v,c,'coef',3] = 4.
-    results_d[v,c,'coef',4] = 4.
-    results_d[v,c,'coef',5] = 0.
-    """
-
-    this = data_table[v, c, :]
 
     times, heights, mix = filter_trajectory(
         this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2]
@@ -82,10 +61,10 @@ for v, c in todo:
     #times = this['time']; heights = this['height2']
 
     if len(times) < len(this['time']):
-                print("TRUNC: {} {} stopped at {}".format(v, c, times[-1]))
+        print("TRUNC: {} {} stopped at {}".format(v, c, times[-1]))
 
     if heights.size < 4:
-        continue
+        return
 
     L = np.sqrt(2) / this["kmin"]
     Atwood = this['atwood'] * this['g']
@@ -97,13 +76,13 @@ for v, c in todo:
     v_spline = h_spline.derivative()
     m_spline = UnivariateSpline(times,     mix, k=3, s = 0.00000001)
 
-    T, MO = mix_model(exp_mix(results[v,c]['C_mix']), L, c, this['delta'], times, h_spline)
+    T, MO = mix_model(exp_mix(C_mix), L, c, this['delta'], times, h_spline)
 
-    T, H, V = dyn_model(exp_dyn(results[v,c]['C_dyn']), Atwood, v, L, m_spline, y0, times)
+    T, H, V = dyn_model(exp_dyn(C_dyn), Atwood, v, L, m_spline, y0, times)
 
-    T, HB, VB, MB = full_model(exp_dyn(results[v,c]['C_dyn']), exp_mix(results[v,c]['C_mix']), Atwood, v, L, c, this['delta'], y0, times)
+    T, HB, VB, MB = full_model(exp_dyn(C_dyn), exp_mix(C_mix), Atwood, v, L, c, this['delta'], y0, times)
 
-    dyn_error, mix_error = both_error(exp_dyn(results[v,c]['C_dyn']), exp_mix(results[v,c]['C_mix']), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
+    dyn_error, mix_error = both_error(exp_dyn(C_dyn), exp_mix(C_mix), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
     # Mixing plot
     fig, axs = plt.subplots(1,2, figsize=(8,8))
@@ -186,13 +165,25 @@ for v, c in todo:
 
 
     res = results[v,c]
-    print("V={}, D={}, C=[{:8.3f}], Err={err:8.3f}".format(v, c, *(res['C_mix']), err=res['E_mix']))
-#    print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res['E_',0]) + str(res['coef',:].values()))
+    #print("V={}, D={}, C=[{:8.3f}], Err={err:8.3f}".format(v, c, *(C_mix), err=res['E_mix']))
+    #print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res['E_',0]) + str(res['coef',:].values()))
     if np.max(heights) < np.sqrt(2):
-        continue
-    print("LW: V={}, D={}, C_dyn=[{:6.3f}, {:8.3f}, {:6.3f}, {:6.3f}], C_mix=[{C5:6.3f}]: [{derr0:6.3f}, {merr0:6.3f}, {derr:6.3f}, {merr:6.3f}]".format(
-                  v, c, *(res['C_dyn']), C5=res['C_mix'][0], derr0=res['E_dyn'], merr0=res['E_mix'], derr=dyn_error, merr=mix_error))
+        return 
+    print("LW: V={}, D={}, C_dyn=[{:6.3f}, {:8.3f}, {:6.3f}, {:6.3f}], C_mix=[{C5:6.3f}]: [{derr:6.3f}, {merr:6.3f}]".format(
+                  v, c, *(C_dyn), C5=C_mix[0], derr=dyn_error, merr=mix_error))
     #print(" >> S=" + str(res['std',:].values()))
+    return
+
+
+for v, c in todo:
+
+    if v < 0.0002:
+        continue
+    if (v, c) not in results:
+        continue
+
+    this = data_table[v, c, :]
+    plot_model(this, results[v,c]['C_mix'], results[v,c]['C_dyn'])
 
 
 Grashof = []
@@ -215,21 +206,19 @@ for v, c in results.keys():
     times, heights, mix = filter_trajectory(this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2])
     mix = 2*(64 - mix)
 
-    Grashof.append(this['atwood']*this['g']/(v**2 * this['kmin']**3))
-    Rayleigh.append(this['atwood']*this['g']/(v*c * this['kmin']**3))
-    Schmidt.append(v/c)
+    L = np.sqrt(2) / this["kmin"]
+    Atwood = this['atwood'] * this['g']
+    y0 = [this["amp0"]/this["kmin"], 0.]
+
 
     if heights.size < 64 or np.max(heights) < np.sqrt(2): # or not (trunc or done):
-        RDE.append(None)
-        RME.append(None)
-        C1.append(None)
-        C2.append(None)
-        C3.append(None)
-        C5.append(None)
-        C7.append(None)
-        depth.append(None)
         print("Skipping {} {}".format(v,c))
         continue
+
+    Grashof.append(this['atwood']*this['g']*np.sqrt(2)**3/(v**2 * this['kmin']**3))
+    Schmidt.append(v/c)
+    Rayleigh.append(Grashof[-1] * Schmidt[-1])
+
 
     dyn_error, mix_error = both_error(exp_dyn(results[v,c]['C_dyn']), exp_mix(results[v,c]['C_mix']), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
@@ -262,22 +251,31 @@ for v, c in results.keys():
 
 def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     plt.figure()
-    plt.scatter(x, y, c=c, s=400, edgecolors=status, linewidths=2)
+    plt.scatter(x, y, c=c, s=1500)
     plt.set_cmap('plasma')
     ax = plt.gca()
     ax.grid()
-    ax.set_xscale("log", basex=2.0)
-    ax.set_yscale("log", basey=2.0)
-    #if xlabel == 'Grashof':
-    #    ax.set_xlim(128, 1048576)
-    #else:
-    #    ax.set_xlim(2048, 1048576)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    xdiff = (np.max(x)/np.min(x))**(1.0/8.0)
+    ax.set_xlim(np.min(x)/xdiff, np.max(x)*xdiff)
+    ax.set_ylim(1.0/np.sqrt(2.0), np.max(y)*2.0)
+
+    plt.axvline(2.0**15.9024, color='black', linestyle='dashed')
+    plt.annotate(s="Complete", xy=(10**4, 64))
+    plt.annotate(s="Incomplete", xy=(10**5.5, 64))
         
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel);
-    ax.set_title("{} vs {} and {} numbers".format(name, xlabel, ylabel))
+    ax.set_xlabel("Rayleigh Number")
+    ax.set_ylabel("Schmidt Number");
+    if title:
+        ax.set_title("Trends in {}".format(name))
     plt.colorbar()
-    plt.savefig("{}-vs-{}-{}.{}".format(name, xlabel, ylabel, img_format))
+    fname = name.replace(" ","")
+    fname = fname.replace("_","")
+    fname = fname.replace("$","")
+    fxlabel = xlabel.replace(" ","")
+    fylabel = ylabel.replace(" ","")
+    plt.savefig("{}-vs-{}-{}.{}".format(fname, fxlabel, fylabel, img_format))
     plt.close()
 
 """
@@ -291,23 +289,26 @@ def plot_dep(res, key, name):
     plt.close()
 """
 
+"""
 plot_scatter(Grashof, Schmidt, RDE, "DynError")
-plot_scatter(Rayleigh, Schmidt, RDE, "DynError", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, RME, "MixError")
-plot_scatter(Rayleigh, Schmidt, RME, "MixError", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, C1, "C1")
-plot_scatter(Rayleigh, Schmidt, C1, "C1", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, C2, "C2")
-plot_scatter(Rayleigh, Schmidt, C2, "C2", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, C3, "C3")
-plot_scatter(Rayleigh, Schmidt, C3, "C3", xlabel='Rayleigh')
 plot_scatter(Grashof, Schmidt, C5, "C5")
-plot_scatter(Rayleigh, Schmidt, C5, "C5", xlabel="Rayleigh")
 plot_scatter(Grashof, Schmidt, C7, "C7")
-plot_scatter(Rayleigh, Schmidt, C7, "C7", xlabel="Rayleigh")
+plot_scatter(Grashof, Schmidt, depth, "Penetration Depth")
+"""
 
-plot_scatter(Grashof, Schmidt, depth, "Depth")
-plot_scatter(Rayleigh, Schmidt, depth, "Depth", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, RDE, "Dynamics Error", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, RME, "Mixing Error", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, C1, "$C_1$", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, C2, "$C_2$", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, C3, "$C_3$", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, C5, "$C_5$", xlabel="Rayleigh")
+plot_scatter(Rayleigh, Schmidt, C7, "$C_7$", xlabel="Rayleigh")
+
+plot_scatter(Rayleigh, Schmidt, depth, "Penetration Depth", xlabel='Rayleigh')
 
 """
 plot_dep(results, 0, 'C1')
