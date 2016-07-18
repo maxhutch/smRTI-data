@@ -14,7 +14,7 @@ from sys import argv
 from argparse import ArgumentParser
 from json import loads
 
-img_format = 'eps'
+img_format = 'png'
 title = False
 
 parser = ArgumentParser(description="Plotter for smRTI data")
@@ -49,10 +49,9 @@ if not args.traj:
 results = results_in
 
 
-def plot_model(this, C_mix, C_dyn):
+def plot_model(this, C_mix, C_dyn, cascade=False):
     v = this['viscosity']
     c = this['conductivity']
-
 
     times, heights, mix = filter_trajectory(
         this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2]
@@ -76,59 +75,18 @@ def plot_model(this, C_mix, C_dyn):
     v_spline = h_spline.derivative()
     m_spline = UnivariateSpline(times,     mix, k=3, s = 0.00000001)
 
-    T, MO = mix_model(exp_mix(C_mix), L, c, this['delta'], times, h_spline)
-
-    T, H, V = dyn_model(exp_dyn(C_dyn), Atwood, v, L, m_spline, y0, times)
+    #T, H, V = dyn_model(exp_dyn(C_dyn), Atwood, v, L, m_spline, y0, times)
 
     T, HB, VB, MB = full_model(exp_dyn(C_dyn), exp_mix(C_mix), Atwood, v, L, c, this['delta'], y0, times)
 
     dyn_error, mix_error = both_error(exp_dyn(C_dyn), exp_mix(C_mix), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
-
-    # Mixing plot
-    fig, axs = plt.subplots(1,2, figsize=(8,8))
-
-    axs[0].plot(times, heights, label="Simulation")
-    axs[0].set_xlabel("Time")
-    axs[0].set_ylabel("Height")
-    #axs[0].legend()
-
-    axs[1].plot(times, mix/(L*L), label="Simulation")
-    axs[1].plot(times, MO/(L*L), label="Model")
-    delta = np.sqrt((times+offset) * c)
-    #axs[1].plot(times, 2*delta/np.sqrt(np.pi) * (1 + 2.*heights), label="Model")
-    diam = L/4.
-    DM = (2*delta/np.sqrt(np.pi)*(1-np.exp(-(diam**2./np.square(delta)))) + 2*diam*(1-erf(diam / delta))) * (1 + 2.*heights)
-    #axs[1].plot(times, DM, label="Model")
-    #axs[1].legend()
-
-    plt.savefig('M-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
-    plt.close()
-
-    """
-    fig, axs = plt.subplots(1, 2, figsize=(8,8))
-    axs[0].plot(times, heights, label="Simulation")
-    axs[0].plot(times, H, label="Model")
-    axs[0].set_xlabel("Time")
-    axs[0].set_ylabel("Height")
-    axs[0].legend(loc=2)
-
-    axs[1].plot(times, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation")
-    axs[1].plot(times, V / np.sqrt(Atwood * L), label="Model")
-    #axs[1].legend()
-    axs[1].axhline(1./np.sqrt(np.pi))
-    axs[1].axhline(L * np.sqrt(Atwood * L) / (results[v,c]['C_dyn'][1] * v))
-    axs[1].set_xlabel("Time")
-    axs[1].set_ylabel("Velocity")
-
-    plt.savefig('H-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
-    plt.close()
-    """
 
     fig, axs = plt.subplots(1, 3, figsize=(12,8))
     axs[0].plot(times, heights, label="Simulation")
     axs[0].plot(times, HB, label="Model")
     axs[0].set_xlabel("Time")
     axs[0].set_ylabel("Height")
+    axs[0].set_ylim(0.0, np.max(heights))
     axs[0].legend(loc=2)
 
     axs[1].plot(times, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation")
@@ -136,11 +94,13 @@ def plot_model(this, C_mix, C_dyn):
     #axs[1].legend()
     axs[1].axhline(1./np.sqrt(np.pi), color='black', linestyle='dashed')
     #axs[1].axhline(L * np.sqrt(Atwood * L) / (results[v,c]['C_dyn'][1] * v))
+    axs[1].set_ylim(0.0, np.max(v_spline(times)))
     axs[1].set_xlabel("Time")
     axs[1].set_ylabel("Velocity")
 
     axs[2].plot(times, mix/(2*L*L), label="Simulation")
     axs[2].plot(times, MB/(2*L*L), label="Model")
+    axs[2].set_ylim(0.0, np.max(mix/(2*L*L)))
     axs[2].set_xlabel("Time")
     axs[2].set_ylabel("Mixing height")
     axs[2].yaxis.set_label_position("right")
@@ -148,20 +108,6 @@ def plot_model(this, C_mix, C_dyn):
 
     axs[1].set_title(r"Fit of $\nu=${} and D={}".format(v, c))
     plt.savefig('H-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
-    plt.close()
-
-    plt.figure()
-    plt.plot(times, H - heights)
-    plt.savefig('diff-{}-{}.{}'.format(v,c,img_format))
-    plt.close()
-
-    plt.figure()
-    plt.plot(this['time'], this['height2'], label="Inflection")
-    plt.plot(this['time'], this['height'], label="Max")
-    plt.plot(this['time'], this['height3'], label="Mean")
-    plt.legend()
-    plt.savefig('comp-height-{}-{}.{}'.format(v,c,img_format))
-    plt.close()
 
 
     res = results[v,c]
@@ -172,6 +118,48 @@ def plot_model(this, C_mix, C_dyn):
     print("LW: V={}, D={}, C_dyn=[{:6.3f}, {:8.3f}, {:6.3f}, {:6.3f}], C_mix=[{C5:6.3f}]: [{derr:6.3f}, {merr:6.3f}]".format(
                   v, c, *(C_dyn), C5=C_mix[0], derr=dyn_error, merr=mix_error))
     #print(" >> S=" + str(res['std',:].values()))
+
+    if not cascade:
+        return
+
+    fig, axs = plt.subplots(1, 1)
+
+    axs.plot(heights/L, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation", color='black')
+    axs.set_ylim(0.0, 2*np.max(v_spline(times))/ np.sqrt(Atwood * L))
+    #axs.set_xlim(0.0, np.max(heights)/L)
+    axs.set_xlim(0.0, 2)
+    axs.set_xlabel("Bubble Height ($h/\lambda$)")
+    axs.set_ylabel("Froude number")
+
+    C_mix_tmp = [0., 0.]
+    C_dyn_tmp = [0., 0., 0., 0.]
+    T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='0')
+
+    C_mix_tmp = [0., 0.]
+    C_dyn_tmp = [0., 0., C_dyn[2], 0.]
+    T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C3')
+
+    C_mix_tmp = [0., 0.]
+    C_dyn_tmp = [C_dyn[0], 0., C_dyn[2], 0.]
+    T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C1')
+
+    C_mix_tmp = [0., 0.]
+    C_dyn_tmp = [C_dyn[0], C_dyn[1], C_dyn[2], 0.]
+    T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C2')
+
+    C_mix_tmp = [C_mix[0], 0.]
+    C_dyn_tmp = [C_dyn[0], C_dyn[1], C_dyn[2], C_dyn[3]]
+    T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C5,C7')
+
+    axs.legend()
+    axs.grid()
+    plt.savefig('Cascade-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
+
     return
 
 
@@ -184,6 +172,13 @@ for v, c in todo:
 
     this = data_table[v, c, :]
     plot_model(this, results[v,c]['C_mix'], results[v,c]['C_dyn'])
+
+vfoo = 0.0004; cfoo = 0.0001
+this = data_table[vfoo, cfoo, :]
+C_mix_full = results[vfoo,cfoo]['C_mix']
+C_dyn_full = results[vfoo, cfoo]['C_dyn']
+
+plot_model(this, C_mix_full, C_dyn_full, cascade=True)
 
 
 Grashof = []
