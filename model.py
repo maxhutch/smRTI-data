@@ -24,7 +24,7 @@ fix = [
       ]
 
 bounds_dyn = [[ 0.00,   0.0, 1.00,  1.0],
-              [10.00, 400.0, 8.0,   8.002] ]
+              [10.00, 400.0, 16.0,   8.002] ]
 scaling_dyn = [1.0,  50.0, 3.501, 3.501]
 reg_param = 0.0
 
@@ -111,7 +111,8 @@ def mix_direct(C, L, diff, delta_i, time, height):
     offset = delta_i**2. / (4. * diff)
     delta = 2. * np.sqrt((time+offset) * diff)
     diam = C[0] * L/(2.*4)
-    SA =  (C[1] * L + C[0]*height) * L
+    foo = 1.0 / (1.0 + 2 * np.sqrt(np.pi) * delta / L)
+    SA =  (foo * L + C[0]*height) * L
     integral = (
                  2*delta/np.sqrt(np.pi)*(1-np.exp(-(diam**2./np.square(delta)))) 
                + 2*diam*(1-erf(diam / delta))
