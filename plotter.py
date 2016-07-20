@@ -81,7 +81,7 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
 
     dyn_error, mix_error = both_error(exp_dyn(C_dyn), exp_mix(C_mix), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
-    fig, axs = plt.subplots(1, 3, figsize=(12,8))
+    fig, axs = plt.subplots(3, 1, figsize=(8,12))
     axs[0].plot(times, heights, label="Simulation")
     axs[0].plot(times, HB, label="Model")
     axs[0].set_xlabel("Time")
@@ -105,8 +105,9 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     axs[2].set_ylabel("Mixing height")
     axs[2].yaxis.set_label_position("right")
     #axs[2].legend()
-
-    axs[1].set_title(r"Fit of $\nu=${} and D={}".format(v, c))
+    
+    if title:
+        axs[1].set_title(r"Fit of $\nu=${} and D={}".format(v, c))
     plt.savefig('H-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
     plt.close()
 
