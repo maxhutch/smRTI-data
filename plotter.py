@@ -86,7 +86,7 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     axs[0].plot(times, HB, label="Model")
     axs[0].set_xlabel("Time")
     axs[0].set_ylabel("Height")
-    axs[0].set_ylim(0.0, np.max(heights))
+    axs[0].set_ylim(0.0, 1.2*np.max(heights))
     axs[0].legend(loc=2)
 
     axs[1].plot(times, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation")
@@ -94,7 +94,7 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     #axs[1].legend()
     axs[1].axhline(1./np.sqrt(np.pi), color='black', linestyle='dashed')
     #axs[1].axhline(L * np.sqrt(Atwood * L) / (results[v,c]['C_dyn'][1] * v))
-    axs[1].set_ylim(0.0, np.max(v_spline(times)))
+    axs[1].set_ylim(0.0, 1.2*np.max(v_spline(times))/np.sqrt(Atwood * L))
     axs[1].set_xlabel("Time")
     axs[1].set_ylabel("Velocity")
 
@@ -108,6 +108,7 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
 
     axs[1].set_title(r"Fit of $\nu=${} and D={}".format(v, c))
     plt.savefig('H-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
+    plt.close()
 
 
     res = results[v,c]
@@ -127,38 +128,48 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     axs.plot(heights/L, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation", color='black')
     axs.set_ylim(0.0, 2*np.max(v_spline(times))/ np.sqrt(Atwood * L))
     #axs.set_xlim(0.0, np.max(heights)/L)
-    axs.set_xlim(0.0, 2)
     axs.set_xlabel("Bubble Height ($h/\lambda$)")
     axs.set_ylabel("Froude number")
 
     C_mix_tmp = [0., 0.]
     C_dyn_tmp = [0., 0., 0., 0.]
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
-    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='0')
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_4,C_6,C_8 > 0$')
 
     C_mix_tmp = [0., 0.]
     C_dyn_tmp = [0., 0., C_dyn[2], 0.]
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
-    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C3')
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_3 > 0$')
 
     C_mix_tmp = [0., 0.]
     C_dyn_tmp = [C_dyn[0], 0., C_dyn[2], 0.]
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
-    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C1')
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_1 > 0$')
 
     C_mix_tmp = [0., 0.]
     C_dyn_tmp = [C_dyn[0], C_dyn[1], C_dyn[2], 0.]
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
-    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C2')
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_2 > 0$')
 
     C_mix_tmp = [C_mix[0], 0.]
     C_dyn_tmp = [C_dyn[0], C_dyn[1], C_dyn[2], C_dyn[3]]
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
-    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='C5,C7')
+    axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_5,C_7 > 0$')
+    axs.axvline(0.05, color='black', linestyle='dashed')
+    axs.axvline(0.5, color='black', linestyle='dashed')
+    axs.axvline(1.5, color='black', linestyle='dashed')
 
-    axs.legend()
     axs.grid()
+    axs.set_xlim(0.0, 2)
+    if v < 0.0008:
+        axs.legend(loc=2, ncol=1)
+    else:
+        axs.legend(loc=4, ncol=2)
+    plt.savefig('Cascade-short-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
+    axs.set_xlim(0.0, np.max(heights)/L)
+    axs.legend(loc=8, ncol=2)
     plt.savefig('Cascade-{:d}-{:d}.{}'.format(int(v*10000),int(c*10000),img_format))
+    plt.close()
 
     return
 
@@ -171,14 +182,15 @@ for v, c in todo:
         continue
 
     this = data_table[v, c, :]
-    plot_model(this, results[v,c]['C_mix'], results[v,c]['C_dyn'])
+    plot_model(this, results[v,c]['C_mix'], results[v,c]['C_dyn'], cascade=True)
 
+"""
 vfoo = 0.0004; cfoo = 0.0001
 this = data_table[vfoo, cfoo, :]
 C_mix_full = results[vfoo,cfoo]['C_mix']
 C_dyn_full = results[vfoo, cfoo]['C_dyn']
-
 plot_model(this, C_mix_full, C_dyn_full, cascade=True)
+"""
 
 
 Grashof = []
@@ -192,6 +204,7 @@ C3 = []
 C5 = []
 C7 = []
 depth = []
+depth_d = {}
 status = []
 for v, c in results.keys():
     if v < 0.0002:
@@ -243,6 +256,10 @@ for v, c in results.keys():
     C3.append(res['C_dyn'][2])
     C5.append(res['C_mix'][0])
     C7.append(res['C_dyn'][3])
+    if np.max(heights) < 23.5:
+        depth_d[Rayleigh[-1], Schmidt[-1]] = np.max(heights)
+
+depth_c = CachedSlict(depth_d)
 
 def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     plt.figure()
@@ -272,6 +289,17 @@ def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     fylabel = ylabel.replace(" ","")
     plt.savefig("{}-vs-{}-{}.{}".format(fname, fxlabel, fylabel, img_format))
     plt.close()
+
+
+def plot_Ra(data):
+    plt.figure()
+    for Sc in set([s for (r,s) in data.keys()]):
+        plt.plot(data[:,Sc].keys(), data[:,Sc].values(), 'x', label="Sc = {}".format(Sc))
+    plt.xlabel("Rayleigh number")
+    plt.ylabel("Penetration depth ($h / \\lambda$)")
+    plt.savefig("Depth-vs-Rayleigh.{}".format(img_format))
+    plt.close()
+
 
 """
 def plot_dep(res, key, name):
@@ -304,6 +332,8 @@ plot_scatter(Rayleigh, Schmidt, C5, "$C_5$", xlabel="Rayleigh")
 plot_scatter(Rayleigh, Schmidt, C7, "$C_7$", xlabel="Rayleigh")
 
 plot_scatter(Rayleigh, Schmidt, depth, "Penetration Depth", xlabel='Rayleigh')
+plot_Ra(depth_c)
+
 
 """
 plot_dep(results, 0, 'C1')
