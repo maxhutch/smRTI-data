@@ -69,6 +69,8 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     Atwood = this['atwood'] * this['g']
     y0 = [this["amp0"]/this["kmin"], 0.]
 
+    gamma = np.sqrt(Atwood * 2. * np.pi / L)
+
     offset = this['delta']**2. / c    
 
     h_spline = UnivariateSpline(times, heights, k=3, s = 0.00000001)
@@ -81,29 +83,30 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
 
     dyn_error, mix_error = both_error(exp_dyn(C_dyn), exp_mix(C_mix), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
-    fig, axs = plt.subplots(3, 1, figsize=(8,12))
-    axs[0].plot(times, heights, label="Simulation")
-    axs[0].plot(times, HB, label="Model")
-    axs[0].set_xlabel("Time")
-    axs[0].set_ylabel("Height")
-    axs[0].set_ylim(0.0, 1.2*np.max(heights))
+    fig, axs = plt.subplots(3, 1, figsize=(8,12), sharex=True)
+    fig.subplots_adjust(hspace=0)
+    axs[0].plot(times*gamma, heights/L, label="Simulation")
+    axs[0].plot(times*gamma, HB/L, label="Model")
+    axs[0].set_ylabel("Bubble Height ($h / \\lambda$)")
+    axs[0].set_ylim(0.0, 1.2*np.max(heights)/L)
     axs[0].legend(loc=2)
+    axs[0].grid()
 
-    axs[1].plot(times, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation")
-    axs[1].plot(times, VB / np.sqrt(Atwood * L), label="Model")
+    axs[1].plot(times*gamma, v_spline(times)/ np.sqrt(Atwood * L), label="Simulation")
+    axs[1].plot(times*gamma, VB / np.sqrt(Atwood * L), label="Model")
     #axs[1].legend()
     axs[1].axhline(1./np.sqrt(np.pi), color='black', linestyle='dashed')
     #axs[1].axhline(L * np.sqrt(Atwood * L) / (results[v,c]['C_dyn'][1] * v))
     axs[1].set_ylim(0.0, 1.2*np.max(v_spline(times))/np.sqrt(Atwood * L))
-    axs[1].set_xlabel("Time")
-    axs[1].set_ylabel("Velocity")
+    axs[1].set_ylabel("Froude number")
+    axs[1].grid()
 
-    axs[2].plot(times, mix/(2*L*L), label="Simulation")
-    axs[2].plot(times, MB/(2*L*L), label="Model")
-    axs[2].set_ylim(0.0, np.max(mix/(2*L*L)))
-    axs[2].set_xlabel("Time")
-    axs[2].set_ylabel("Mixing height")
-    axs[2].yaxis.set_label_position("right")
+    axs[2].plot(times*gamma, mix/(2*L*L*L), label="Simulation")
+    axs[2].plot(times*gamma, MB/(2*L*L*L), label="Model")
+    axs[2].set_ylim(0.0, 1.2*np.max(mix/(2*L*L*L)))
+    axs[2].set_ylabel("Mixing height ($M / \lambda^3$) ")
+    axs[2].set_xlabel("Time ($\\gamma_0 T$)")
+    axs[2].grid()
     #axs[2].legend()
     
     if title:
@@ -204,6 +207,7 @@ C2 = []
 C3 = []
 C5 = []
 C7 = []
+C9 = []
 depth = []
 depth_d = {}
 status = []
@@ -231,7 +235,6 @@ for v, c in results.keys():
 
     dyn_error, mix_error = both_error(exp_dyn(results[v,c]['C_dyn']), exp_mix(results[v,c]['C_mix']), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
-
     rel_dyn_error = dyn_error / np.max(heights)
     rel_mix_error = mix_error / np.max(mix)
 
@@ -257,6 +260,7 @@ for v, c in results.keys():
     C3.append(res['C_dyn'][2])
     C5.append(res['C_mix'][0])
     C7.append(res['C_dyn'][3])
+    C9.append(C5[-1]/C7[-1])
     if np.max(heights) < 23.5:
         depth_d[Rayleigh[-1], Schmidt[-1]] = np.max(heights)
 
@@ -291,11 +295,24 @@ def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     plt.savefig("{}-vs-{}-{}.{}".format(fname, fxlabel, fylabel, img_format))
     plt.close()
 
+from scipy.stats import linregress
 
 def plot_Ra(data):
     plt.figure()
+    Ra = np.zeros(0)
+    val = np.zeros(0)
     for Sc in set([s for (r,s) in data.keys()]):
         plt.plot(data[:,Sc].keys(), data[:,Sc].values(), 'x', label="Sc = {}".format(Sc))
+        Ra  = np.append(Ra,  data[:,Sc].keys())
+        val = np.append(val, data[:,Sc].values()) 
+    slope, intercept, r, p, stderr = linregress(Ra, val)
+    xmin = np.min(Ra); xmax = np.max(Ra)
+    label = '{:5.2e} Ra {:+5.2f}'.format(slope, intercept)
+    plt.plot([xmin,xmax], [intercept+slope*xmin, intercept+slope*xmax], 'k--', label=label)
+    if slope > 0:
+      plt.legend(loc=2, ncol=2)
+    else:
+      plt.legend(loc=1, ncol=2)
     plt.xlabel("Rayleigh number")
     plt.ylabel("Penetration depth ($h / \\lambda$)")
     plt.savefig("Depth-vs-Rayleigh.{}".format(img_format))
@@ -331,6 +348,7 @@ plot_scatter(Rayleigh, Schmidt, C2, "$C_2$", xlabel='Rayleigh')
 plot_scatter(Rayleigh, Schmidt, C3, "$C_3$", xlabel='Rayleigh')
 plot_scatter(Rayleigh, Schmidt, C5, "$C_5$", xlabel="Rayleigh")
 plot_scatter(Rayleigh, Schmidt, C7, "$C_7$", xlabel="Rayleigh")
+plot_scatter(Rayleigh, Schmidt, C9, "$C_9$", xlabel="Rayleigh")
 
 plot_scatter(Rayleigh, Schmidt, depth, "Penetration Depth", xlabel='Rayleigh')
 plot_Ra(depth_c)
