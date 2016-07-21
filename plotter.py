@@ -164,7 +164,8 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     Ra = Gr * v / c
 
     axs.axvline(0.05, color='black', linestyle='dashed')
-    axs.axvline(np.pi * Gr / (113.**2.), color='black', linestyle='dashed')
+    axs.axvline(np.pi * Gr / (128.**2.) / 4., color='black', linestyle='dashed')
+    axs.axvline(Ra / (128. * 64) / 2., color='black', linestyle='dashed')
     #axs.axvline(1.5, color='black', linestyle='dashed')
 
     axs.grid()
