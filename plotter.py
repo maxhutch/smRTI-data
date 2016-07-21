@@ -7,14 +7,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize, basinhopping, differential_evolution
+from scipy.optimize import minimize, minimize_scalar, basinhopping, differential_evolution
 from scipy.interpolate import UnivariateSpline
 from scipy.special import erf
 from sys import argv
 from argparse import ArgumentParser
 from json import loads
 
-img_format = 'png'
+img_format = 'eps'
 title = False
 
 parser = ArgumentParser(description="Plotter for smRTI data")
@@ -159,9 +159,13 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     C_dyn_tmp = [C_dyn[0], C_dyn[1], C_dyn[2], C_dyn[3]]
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
     axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_5,C_7 > 0$')
+
+    Gr = Atwood * L**3 / (v*v)
+    Ra = Gr * v / c
+
     axs.axvline(0.05, color='black', linestyle='dashed')
-    axs.axvline(0.5, color='black', linestyle='dashed')
-    axs.axvline(1.5, color='black', linestyle='dashed')
+    axs.axvline(np.pi * Gr / (113.**2.), color='black', linestyle='dashed')
+    #axs.axvline(1.5, color='black', linestyle='dashed')
 
     axs.grid()
     axs.set_xlim(0.0, 2)
@@ -209,7 +213,9 @@ C5 = []
 C7 = []
 C9 = []
 depth = []
+peak = []
 depth_d = {}
+peak_d = {}
 status = []
 for v, c in results.keys():
     if v < 0.0002:
@@ -232,6 +238,12 @@ for v, c in results.keys():
     Schmidt.append(v/c)
     Rayleigh.append(Grashof[-1] * Schmidt[-1])
 
+    h_spline = UnivariateSpline(times, heights, k=3, s = 0.00000001)
+    v_spline = h_spline.derivative()
+    t_max = minimize_scalar(lambda t: -v_spline(t), method='bounded', bounds=[0, np.max(times)]).x
+    h_max = h_spline(t_max)
+    if v < 0.0004:
+        h_max = 24.
 
     dyn_error, mix_error = both_error(exp_dyn(results[v,c]['C_dyn']), exp_mix(results[v,c]['C_mix']), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
 
@@ -250,6 +262,7 @@ for v, c in results.keys():
         done = True
         print(v, c, "got done")
 
+    peak.append(h_max)
     status.append(color)
     depth.append(np.max(heights))
     res = results[v,c]
@@ -262,9 +275,12 @@ for v, c in results.keys():
     C7.append(res['C_dyn'][3])
     C9.append(C5[-1]/C7[-1])
     if np.max(heights) < 23.5:
-        depth_d[Rayleigh[-1], Schmidt[-1]] = np.max(heights)
+        depth_d[Rayleigh[-1], Schmidt[-1]] = np.max(heights) / L
+    if h_max < 23.5:
+        peak_d[Grashof[-1], c] = h_max / L
 
 depth_c = CachedSlict(depth_d)
+peak_c = CachedSlict(peak_d)
 
 def plot_scatter(x, y, c, name, xlabel='Grashof', ylabel='Schmidt'):
     plt.figure()
@@ -318,6 +334,31 @@ def plot_Ra(data):
     plt.savefig("Depth-vs-Rayleigh.{}".format(img_format))
     plt.close()
 
+def plot_Gr(data):
+    plt.figure()
+    Ra = np.zeros(0)
+    val = np.zeros(0)
+    for Sc in set([s for (r,s) in data.keys()]):
+        plt.plot(data[:,Sc].keys(), data[:,Sc].values(), 'x-', label="Sc = {}".format(Sc))
+        Ra  = np.append(Ra,  data[:,Sc].keys())
+        val = np.append(val, data[:,Sc].values()) 
+    slope, intercept, r, p, stderr = linregress(Ra, val)
+    xmin = np.min(Ra); xmax = np.max(Ra)
+    slope = np.pi / (113.0**2)
+    intercept = 0.0
+    label = '{:5.2e} Ra {:+5.2f}'.format(slope, intercept)
+    plt.plot([xmin,xmax], [intercept+slope*xmin, intercept+slope*xmax], 'k--', label=label)
+    if slope > 0:
+      plt.legend(loc=2, ncol=2)
+    else:
+      plt.legend(loc=1, ncol=2)
+    plt.xlabel("Grashof number")
+    plt.ylabel("Peak height ($h / \\lambda$)")
+    plt.xlim(0.0, 200000)
+    plt.grid()
+    plt.savefig("Peak-vs-Grashof.{}".format(img_format))
+    plt.close()
+
 
 """
 def plot_dep(res, key, name):
@@ -339,6 +380,7 @@ plot_scatter(Grashof, Schmidt, C3, "C3")
 plot_scatter(Grashof, Schmidt, C5, "C5")
 plot_scatter(Grashof, Schmidt, C7, "C7")
 plot_scatter(Grashof, Schmidt, depth, "Penetration Depth")
+
 """
 
 plot_scatter(Rayleigh, Schmidt, RDE, "Dynamics Error", xlabel='Rayleigh')
@@ -350,8 +392,10 @@ plot_scatter(Rayleigh, Schmidt, C5, "$C_5$", xlabel="Rayleigh")
 plot_scatter(Rayleigh, Schmidt, C7, "$C_7$", xlabel="Rayleigh")
 plot_scatter(Rayleigh, Schmidt, C9, "$C_9$", xlabel="Rayleigh")
 
-plot_scatter(Rayleigh, Schmidt, depth, "Penetration Depth", xlabel='Rayleigh')
+plot_scatter(Rayleigh, Schmidt, depth/L, "Penetration Depth", xlabel='Rayleigh')
+plot_scatter(Grashof, Schmidt, peak/L, "Peak height", xlabel='Grashof')
 plot_Ra(depth_c)
+plot_Gr(peak_c)
 
 
 """
