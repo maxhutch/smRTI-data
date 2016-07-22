@@ -53,6 +53,7 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     v = this['viscosity']
     c = this['conductivity']
 
+
     times, heights, mix = filter_trajectory(
         this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2]
         )
@@ -68,6 +69,10 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     L = np.sqrt(2) / this["kmin"]
     Atwood = this['atwood'] * this['g']
     y0 = [this["amp0"]/this["kmin"], 0.]
+
+    Gr = Atwood * L**3 / (v*v)
+    Ra = Gr * v / c
+    Sc = v / c
 
     gamma = np.sqrt(Atwood * 2. * np.pi / L)
 
@@ -121,8 +126,10 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     if np.max(heights) < np.sqrt(2):
         return 
     print("LW: V={}, D={}, C_dyn=[{:6.3f}, {:8.3f}, {:6.3f}, {:6.3f}], C_mix=[{C5:6.3f}]: [{derr:6.3f}, {merr:6.3f}]".format(
-                  v, c, *(C_dyn), C5=C_mix[0], derr=dyn_error, merr=mix_error))
+                  v, c, *(C_dyn), C5=C_mix[0], derr=dyn_error/np.max(heights), merr=mix_error/np.max(mix)))
     #print(" >> S=" + str(res['std',:].values()))
+    print("T: {Grashof} {Rayleigh} {Schmidt} {C1:6.3f} {C2:8.3f} {C3:6.3f} {C7:6.3f} {C5:6.3f} {E_dyn} {E_mix}".format(
+          Grashof=Gr, Rayleigh=Ra, Schmidt=Sc, C1=C_dyn[0], C2=C_dyn[1], C3=C_dyn[2], C7=C_dyn[3], C5=C_mix[0], E_dyn=dyn_error/np.max(heights), E_mix=mix_error/np.max(mix)))
 
     if not cascade:
         return
@@ -160,8 +167,6 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     T, HB, VB, MB = full_model(exp_dyn(C_dyn_tmp), exp_mix(C_mix_tmp), Atwood, v, L, c, this['delta'], y0, times)
     axs.plot(HB/L, VB / np.sqrt(Atwood * L), label='$C_5,C_7 > 0$')
 
-    Gr = Atwood * L**3 / (v*v)
-    Ra = Gr * v / c
 
     axs.axvline(0.05, color='black', linestyle='dashed')
     axs.axvline(np.pi * Gr / (128.**2.) / 4., color='black', linestyle='dashed')
@@ -183,12 +188,14 @@ def plot_model(this, C_mix, C_dyn, cascade=False):
     return
 
 
+print("T: {Gr} {Ra} {Sc} {$C_1$} {$C_2$} {$C_3$} {$C_7$} {$C_5$} {$E_d/max(H)$} {$E_m/max(M)$}")
 for v, c in todo:
 
     if v < 0.0002:
         continue
     if (v, c) not in results:
         continue
+    
 
     this = data_table[v, c, :]
     plot_model(this, results[v,c]['C_mix'], results[v,c]['C_dyn'], cascade=True)
