@@ -35,9 +35,9 @@
   "max_fft_procs": 0,
   "cps": 1.0,
   "shape_mesh": [
-    2,
-    2,
-    256
+    4,
+    4,
+    512
   ],
   "kscal": 1,
   "order": 32,

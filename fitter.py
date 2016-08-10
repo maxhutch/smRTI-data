@@ -3,139 +3,79 @@
 import pickle
 from slict import CachedSlict
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize
-import cma
-from os.path import exists
-from scipy.interpolate import UnivariateSpline
+from scipy.optimize import minimize, basinhopping, differential_evolution
 
-from scipy.optimize import basinhopping, minimize
 
 with open("data_table.p", 'rb') as f:
     data_table_d = pickle.load(f)
 
 data_table = CachedSlict(data_table_d)
 
-from model import filter_trajectory, error
-from model import dyn_error, guess_dyn, bounds_dyn, exp_dyn, scaling_dyn, bounds_dyn_t
-from model import mix_error, guess_mix, bounds_mix, exp_mix
+from model import model, error
 
-if exists("fit_results.p"):
-    with open("fit_results.p", "rb") as f:
-        results = pickle.load(f)
-    with open("reg_fit_results.p", "rb") as f:
-        reg_results = pickle.load(f)
-else:
-    results = {}
+guess = [1.0, 1.0, 113.0, 1.0, 1./(2*np.pi), 4.0, 1.0]
+bounds = ((1, 1), (0, 10), (0,400), (0.01, 100), (1./(2*np.pi), 1./(2*np.pi)), (0.01, 100), (1,1))
 
-todo = list(data_table[:,:,'time'].keys())
-todo.reverse()
+def accept_test(f_new, x_new, f_old, x_old):
+    for i in range(len(bounds)):
+        if x_new[i] < bounds[i][0] or x_new[i] > bounds[i][1]:
+            return False
+    return True
 
-for v, c in todo:
+results = {}
 
+for v, c in data_table[:,:,'time'].keys():
+    plt.figure()
     this = data_table[v, c, :]
-
-    times, heights, mix = filter_trajectory(this['time'], this['height2'], this['mixed_mass'], this['extent_mesh'][2])
-    mix = 2*(64 - mix)
-
-    if len(times) < len(this['time']):
-        print("TRUNC: {} {} stopped at {}".format(v, c, times[-1]))
-
-    if len(times) < 16:
-        continue
-
-    print("#========================")
-    print("# MINIMIZING nu = {}, D = {}".format(v, c))
-    print("#========================")
+    plt.plot(this['time'], this['height'])
 
     L = np.sqrt(2) / this["kmin"]
     Atwood = this['atwood'] * this['g']
-    y0 = [this["amp0"]/this["kmin"], 0.]
+    y0 = [this["amp0"]/this["kmin"], 0., 2*this['delta']*L*L/np.sqrt(np.pi)]
 
-    h_spline = UnivariateSpline(times, heights, k=3, s = 0.00000001)
-    m_spline = UnivariateSpline(times, mix, k=3, s = 0.00000001)
 
-    if (v,c) in results:
-        start_mix = reg_results[v,c]["C_mix"]
-        start_dyn = reg_results[v,c]["C_dyn"]
-#        if results[v,c]["E_dyn"] < .1:
-#            continue
-#        else:
-#            start_dyn = guess_dyn 
-    else:
-        results[v,c] = {}
-        start_mix = guess_mix
-        start_dyn = guess_dyn
-
-    reg_results[v,c] = {}
-
-    def func0(x):
-        return mix_error(exp_mix(x), L, c, this['delta'], times, h_spline, mix)
-
-    def accept_test_mix(f_new, x_new, f_old, x_old):
-        res = x_new[0] > bounds_mix[0][0] and x_new[0] < bounds_mix[0][1]
-        return bool(res)
-
-    mix_res = basinhopping(
-                func0, 
-                start_mix, 
-                disp=False, 
-                minimizer_kwargs={'method' : 'SLSQP', 'bounds': bounds_mix},
-                accept_test=accept_test_mix,
-              )
-
-    results[v,c]["C_mix"] = mix_res.x
-    results[v,c]["E_mix"] = mix_res.fun
-
-    reg_results[v,c]["C_mix"] = mix_res.x
-    reg_results[v,c]["E_mix"] = mix_res.fun
- 
- 
-    def func1(x):
-        #return dyn_error(exp_dyn(x), Atwood, v, L, y0, times, heights, m_spline)
-        return error(exp_dyn(x), exp_mix(results[v,c]["C_mix"]), Atwood, v, L, c, this['delta'], y0, times, heights, mix)
+    T, H, V, At = model(guess, Atwood, v, L, c, y0, this['time'])
+    rmse_i = error(guess, Atwood, v, L, c, y0, this['time'], this['height'])
+    plt.plot(this['time'], H)
+  
+    func = lambda x: error(x, Atwood, v, L, c, y0, this['time'], this['height'])
    
-    for i in range(len(start_dyn)):
-        start_dyn[i] = max(start_dyn[i], bounds_dyn[0][i])
-        start_dyn[i] = min(start_dyn[i], bounds_dyn[1][i])
+    opts = {'maxiter': 1000, 'disp': True}
+    res_l = minimize(func, guess, bounds=bounds, method='SLSQP', options=opts, tol=1.e-12)
+    rmse_l = error(res_l.x, Atwood, v, L, c, y0, this['time'], this['height'])
 
-    cma_opts = {
-        'bounds'  : bounds_dyn,
-        'tolfun'  : 1.0e-9,
-#        'fixed_variables' : {3:mix_res.x[0]},
-        'scaling_of_variables' : scaling_dyn, #get_scaling(bounds_thin_cma), 
-        'popsize' : 32,
-#        'verbose' : 0,
-#        'tolfacupx' : 1.0e12,
-#        'maxfevals' : 256
+    margs = {
+        "method": 'SLSQP',
+        "bounds": bounds,
+        "options": opts,
     }
-    res_cma = cma.fmin(func1, start_dyn, 1.0, cma_opts)
+    """
+    res_n = basinhopping(func, res_l.x, 
+                minimizer_kwargs=margs, disp=True, 
+                accept_test = accept_test,
+                T=0.001, 
+                niter_success=50, 
+                niter=1000)
+    """
+    res_n = differential_evolution(func, bounds, popsize=64, disp=True)
+    rmse_n = error(res_n.x, Atwood, v, L, c, y0, this['time'], this['height'])
 
-    res_slsqp = minimize(func1, res_cma[0], method='SLSQP', bounds=bounds_dyn_t, tol=1.0e-12, options={'ftol': 1.0e-12})
+    print(v, c, rmse_i, rmse_l, rmse_n)
+    print(guess)
+    print(res_l.x)
+    print(res_n.x)
+    results[v, c] = res_n.x
 
-    results[v,c]["C_dyn"] = res_slsqp.x
-    results[v,c]["E_dyn"] = res_slsqp.fun
+    T, H, V, At = model(res_n.x, Atwood, v, L, c, y0, this['time'])
 
-    def func2(x):
-        return error(exp_dyn(x), exp_mix(results[v,c]["C_mix"]), Atwood, v, L, c, this['delta'], y0, times, heights, mix,
-                     reg_param = 0.1 * res_slsqp.fun) 
-
-    res_cma = cma.fmin(func2, res_slsqp.x, 1.0, cma_opts)
-    res_slsqp = minimize(func2, res_cma[0], method='SLSQP', bounds=bounds_dyn_t, tol=1.0e-12, options={'ftol': 1.0e-12})
-
-    reg_results[v,c]["C_dyn"] = res_slsqp.x
-    reg_results[v,c]["E_dyn"] = res_slsqp.fun
-
-    with open("fit_results.p", "wb") as f:
-        pickle.dump(results, f)
-
-    with open("reg_fit_results.p", "wb") as f:
-        pickle.dump(reg_results, f)
+    plt.plot(this['time'], H)
+    plt.savefig('H-{}-{}.png'.format(v,c))
 
 
-"""
-for v, c in data_table[:,:,'time'].keys():
-    res = results[v,c]
-    print("V={}, D={}, T={}, Err={}\n >> C=".format(v, c, data_table[v,c,'time'][-1], res[1]) + str(res[0]))
-"""
+for v, c in list(results.keys()):
+    print("V={},D={},C=".format(v, c) + str(results[v,c]))
 
